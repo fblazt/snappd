@@ -1,0 +1,56 @@
+{
+  "name": "snappd",
+  "version": "0.0.0",
+  "description": "A lightweight macOS screenshot utility.",
+  "productName": "Snappd",
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite dev",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "build": "npm run typecheck && electron-vite build",
+    "package:mac": "npm run build && electron-builder --mac --arm64 --dir",
+    "make:mac": "npm run build && electron-builder --mac dmg --arm64"
+  },
+  "dependencies": {
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "electron-vite": "latest",
+    "typescript": "latest",
+    "vite": "^7.3.5",
+    "vitest": "latest"
+  },
+  "build": {
+    "appId": "app.snappd.desktop",
+    "productName": "Snappd",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.utilities"
+    }
+  }
+}
