@@ -1,10 +1,29 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, Menu, type NativeImage, nativeImage, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  type NativeImage,
+  Notification,
+  nativeImage,
+  Tray,
+} from 'electron';
 import { appInfo } from '../shared/app-info';
-import { type CaptureMode, type CapturePlaceholderResponse, ipcChannels } from '../shared/ipc';
+import {
+  type CaptureMode,
+  type CapturePlaceholderResponse,
+  ipcChannels,
+  type ShortcutStatus,
+} from '../shared/ipc';
+import { type AppSettings, normalizeSettings } from '../shared/settings';
+import { getSettingsFilePath, readSettings, writeSettings } from './settings-store';
 
 let preferencesWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let settings: AppSettings;
+let shortcutStatus: ShortcutStatus = { region: 'not-registered' };
 
 function createSecureWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -73,46 +92,115 @@ function createTrayIcon(): NativeImage {
 }
 
 function handleCapturePlaceholder(mode: CaptureMode): CapturePlaceholderResponse {
+  console.info(`Capture ${mode} requested.`);
+
   return {
     mode,
     status: 'not-implemented',
   };
 }
 
+function applyDockVisibility(): void {
+  if (settings.showDockIcon) {
+    app.dock?.show();
+    return;
+  }
+
+  app.dock?.hide();
+}
+
+function registerShortcuts(): void {
+  globalShortcut.unregisterAll();
+  const registered = globalShortcut.register(settings.regionShortcut, () => {
+    handleCapturePlaceholder('region');
+  });
+
+  shortcutStatus = {
+    region: registered ? 'registered' : 'conflict',
+  };
+
+  if (!registered) {
+    new Notification({
+      title: appInfo.name,
+      body: `Could not register shortcut ${settings.regionShortcut}. Change it in Preferences.`,
+    }).show();
+  }
+}
+
+function buildTrayMenu(): Menu {
+  const shortcutConflictItem =
+    shortcutStatus.region === 'conflict'
+      ? [
+          {
+            label: `Shortcut conflict: ${settings.regionShortcut}`,
+            enabled: false,
+          },
+          { type: 'separator' as const },
+        ]
+      : [];
+
+  return Menu.buildFromTemplate([
+    ...shortcutConflictItem,
+    {
+      label: 'Capture Region',
+      accelerator: settings.regionShortcut,
+      click: () => handleCapturePlaceholder('region'),
+    },
+    {
+      label: 'Capture Window',
+      click: () => handleCapturePlaceholder('window'),
+    },
+    {
+      label: 'Capture Full Screen',
+      click: () => handleCapturePlaceholder('full-screen'),
+    },
+    { type: 'separator' },
+    {
+      label: 'Preferences',
+      click: showPreferencesWindow,
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      role: 'quit',
+    },
+  ]);
+}
+
+function refreshTrayMenu(): void {
+  tray?.setContextMenu(buildTrayMenu());
+}
+
 function createTray(): void {
   tray = new Tray(createTrayIcon());
   tray.setTitle(appInfo.name);
   tray.setToolTip(appInfo.name);
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: 'Capture Region',
-        click: () => handleCapturePlaceholder('region'),
-      },
-      {
-        label: 'Capture Window',
-        click: () => handleCapturePlaceholder('window'),
-      },
-      {
-        label: 'Capture Full Screen',
-        click: () => handleCapturePlaceholder('full-screen'),
-      },
-      { type: 'separator' },
-      {
-        label: 'Preferences',
-        click: showPreferencesWindow,
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        role: 'quit',
-      },
-    ]),
-  );
+  refreshTrayMenu();
+}
+
+async function updateSettings(nextSettings: unknown): Promise<void> {
+  settings = await writeSettings(normalizeSettings(nextSettings));
+  applyDockVisibility();
+  registerShortcuts();
+  refreshTrayMenu();
 }
 
 function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.appInfo, () => ({ name: appInfo.name }));
+  ipcMain.handle(ipcChannels.settingsGet, () => ({
+    settings,
+    shortcutStatus,
+    settingsPath: getSettingsFilePath(),
+  }));
+  ipcMain.handle(ipcChannels.settingsUpdate, async (_event, nextSettings: unknown) => {
+    await updateSettings(nextSettings);
+
+    return {
+      settings,
+      shortcutStatus,
+      settingsPath: getSettingsFilePath(),
+    };
+  });
   ipcMain.handle(ipcChannels.captureRegion, () => handleCapturePlaceholder('region'));
   ipcMain.handle(ipcChannels.captureWindow, () => handleCapturePlaceholder('window'));
   ipcMain.handle(ipcChannels.captureFullScreen, () => handleCapturePlaceholder('full-screen'));
@@ -129,9 +217,11 @@ if (!gotSingleInstanceLock) {
     }
   });
 
-  app.whenReady().then(() => {
-    app.dock?.hide();
+  app.whenReady().then(async () => {
+    settings = await readSettings();
+    applyDockVisibility();
     registerIpcHandlers();
+    registerShortcuts();
     createTray();
 
     app.on('activate', () => {
@@ -139,6 +229,10 @@ if (!gotSingleInstanceLock) {
     });
   });
 }
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 app.on('window-all-closed', () => {
   // Snappd is a menu bar utility, so closing auxiliary windows should not quit the app.

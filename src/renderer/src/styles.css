@@ -50,3 +50,29 @@ p {
   line-height: 1.6;
   margin: 0;
 }
+
+.settings-list {
+  display: grid;
+  gap: 14px;
+  margin: 28px 0 0;
+}
+
+.settings-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-list dt {
+  color: #fb923c;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings-list dd {
+  color: rgba(246, 239, 231, 0.84);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  margin: 0;
+  overflow-wrap: anywhere;
+}

@@ -1,8 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { type AppInfoResponse, type CapturePlaceholderResponse, ipcChannels } from '../shared/ipc';
+import {
+  type AppInfoResponse,
+  type CapturePlaceholderResponse,
+  ipcChannels,
+  type SettingsResponse,
+} from '../shared/ipc';
+import type { AppSettings } from '../shared/settings';
 
 const snappd = {
   getAppInfo: (): Promise<AppInfoResponse> => ipcRenderer.invoke(ipcChannels.appInfo),
+  getSettings: (): Promise<SettingsResponse> => ipcRenderer.invoke(ipcChannels.settingsGet),
+  updateSettings: (settings: AppSettings): Promise<SettingsResponse> =>
+    ipcRenderer.invoke(ipcChannels.settingsUpdate, settings),
   captureRegion: (): Promise<CapturePlaceholderResponse> =>
     ipcRenderer.invoke(ipcChannels.captureRegion),
   captureWindow: (): Promise<CapturePlaceholderResponse> =>
