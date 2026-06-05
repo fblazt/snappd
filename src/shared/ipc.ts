@@ -1,9 +1,12 @@
+import type { CaptureFoundationState } from './capture';
 import type { AppSettings } from './settings';
 
 export const ipcChannels = {
   appInfo: 'app:info',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  captureFoundationGet: 'capture:foundation:get',
+  capturePermissionOpenSettings: 'capture:permission:open-settings',
   captureRegion: 'capture:region',
   captureWindow: 'capture:window',
   captureFullScreen: 'capture:full-screen',
@@ -23,6 +26,10 @@ export interface SettingsResponse {
 
 export interface ShortcutStatus {
   region: 'registered' | 'conflict' | 'not-registered';
+}
+
+export interface CaptureFoundationResponse {
+  foundation: CaptureFoundationState;
 }
 
 export type CaptureMode = 'region' | 'window' | 'full-screen';

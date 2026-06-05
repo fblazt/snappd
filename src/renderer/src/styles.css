@@ -1,78 +1,271 @@
 :root {
-  color: #f6efe7;
-  background: #171412;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1d1d1f;
+  background: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
-.app-shell {
-  align-items: center;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.28), transparent 30%),
-    linear-gradient(135deg, #171412 0%, #2a211d 100%);
-  display: flex;
-  min-height: 100vh;
-  justify-content: center;
-  padding: 32px;
+button,
+code,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
-.hero-card {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 28px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
-  max-width: 560px;
-  padding: 40px;
-}
-
-.eyebrow {
-  color: #fb923c;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  margin: 0 0 12px;
-  text-transform: uppercase;
-}
-
-h1 {
-  font-size: clamp(3rem, 12vw, 5.5rem);
-  line-height: 0.95;
-  margin: 0 0 20px;
-}
-
-p {
-  color: rgba(246, 239, 231, 0.78);
-  font-size: 1.05rem;
-  line-height: 1.6;
-  margin: 0;
-}
-
-.settings-list {
+.preferences-window {
+  background: #f5f5f7;
   display: grid;
-  gap: 14px;
-  margin: 28px 0 0;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
 }
 
-.settings-list div {
+.preferences-sidebar {
+  background: rgba(230, 230, 234, 0.82);
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 28px 14px;
+}
+
+.app-badge {
+  align-items: center;
+  background: linear-gradient(180deg, #ffb06b, #f26f21);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.38),
+    0 8px 18px rgba(242, 111, 33, 0.22);
+  color: #fff;
+  display: flex;
+  font-size: 20px;
+  font-weight: 700;
+  height: 48px;
+  justify-content: center;
+  margin: 0 auto 24px;
+  width: 48px;
+}
+
+nav {
   display: grid;
   gap: 4px;
 }
 
-.settings-list dt {
-  color: #fb923c;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.sidebar-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #343437;
+  cursor: default;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 10px;
+  text-align: left;
 }
 
-.settings-list dd {
-  color: rgba(246, 239, 231, 0.84);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+.sidebar-item.active {
+  background: rgba(0, 0, 0, 0.1);
+  color: #111113;
+}
+
+.sidebar-item:disabled {
+  color: rgba(60, 60, 67, 0.38);
+}
+
+.preferences-content {
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 44px 44px 64px;
+  width: 100%;
+}
+
+.preferences-header {
+  margin-bottom: 28px;
+}
+
+h1 {
+  color: #1d1d1f;
+  font-size: 30px;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0 0 6px;
+}
+
+h2 {
+  color: rgba(60, 60, 67, 0.72);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  padding-left: 14px;
+}
+
+p {
+  color: rgba(60, 60, 67, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
   margin: 0;
+}
+
+.preferences-header p {
+  font-size: 14px;
+}
+
+.settings-group {
+  margin-top: 26px;
+}
+
+.settings-card {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.settings-card.placeholder {
+  color: rgba(60, 60, 67, 0.6);
+  font-size: 13px;
+  padding: 13px 14px;
+}
+
+.settings-row {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(170px, 0.55fr) minmax(0, 1fr);
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid rgba(60, 60, 67, 0.16);
+}
+
+.settings-row.stacked {
+  align-items: start;
+}
+
+.settings-row > span {
+  color: #1d1d1f;
+  font-size: 13px;
+}
+
+.settings-row strong {
+  color: rgba(60, 60, 67, 0.82);
+  font-size: 13px;
+  font-weight: 500;
+  justify-self: end;
+}
+
+.settings-row p {
+  justify-self: end;
+  max-width: 360px;
+  text-align: right;
+}
+
+code {
+  background: rgba(120, 120, 128, 0.12);
+  border-radius: 6px;
+  color: rgba(60, 60, 67, 0.86);
+  font-family: "SF Mono", Menlo, ui-monospace, monospace;
+  font-size: 12px;
+  justify-self: end;
+  max-width: 100%;
   overflow-wrap: anywhere;
+  padding: 3px 6px;
+  text-align: right;
+}
+
+button {
+  appearance: none;
+  background: #fff;
+  border: 1px solid rgba(60, 60, 67, 0.22);
+  border-radius: 7px;
+  color: #1d1d1f;
+  cursor: default;
+  font-size: 13px;
+  font-weight: 500;
+  justify-self: end;
+  min-height: 28px;
+  padding: 4px 12px;
+}
+
+button:hover:not(:disabled) {
+  background: #f5f5f7;
+}
+
+.error-message {
+  background: #fff2f2;
+  border: 1px solid #ffd6d6;
+  border-radius: 10px;
+  color: #b42318;
+  margin-top: 16px;
+  padding: 10px 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f5f5f7;
+    background: #1f1f22;
+  }
+
+  .preferences-window {
+    background: #1f1f22;
+  }
+
+  .preferences-sidebar {
+    background: rgba(44, 44, 46, 0.82);
+    border-right-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .sidebar-item {
+    color: rgba(245, 245, 247, 0.82);
+  }
+
+  .sidebar-item.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f5f5f7;
+  }
+
+  h1,
+  .settings-row > span {
+    color: #f5f5f7;
+  }
+
+  h2,
+  p,
+  .settings-row strong {
+    color: rgba(235, 235, 245, 0.72);
+  }
+
+  .settings-card {
+    background: rgba(44, 44, 46, 0.86);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .settings-row + .settings-row {
+    border-top-color: rgba(84, 84, 88, 0.6);
+  }
+
+  code {
+    background: rgba(118, 118, 128, 0.24);
+    color: rgba(235, 235, 245, 0.82);
+  }
+
+  button {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.14);
+    color: #f5f5f7;
+  }
+
+  button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.14);
+  }
 }

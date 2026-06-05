@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   type AppInfoResponse,
+  type CaptureFoundationResponse,
   type CapturePlaceholderResponse,
   ipcChannels,
   type SettingsResponse,
@@ -12,6 +13,10 @@ const snappd = {
   getSettings: (): Promise<SettingsResponse> => ipcRenderer.invoke(ipcChannels.settingsGet),
   updateSettings: (settings: AppSettings): Promise<SettingsResponse> =>
     ipcRenderer.invoke(ipcChannels.settingsUpdate, settings),
+  getCaptureFoundation: (): Promise<CaptureFoundationResponse> =>
+    ipcRenderer.invoke(ipcChannels.captureFoundationGet),
+  openScreenRecordingSettings: (): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.capturePermissionOpenSettings),
   captureRegion: (): Promise<CapturePlaceholderResponse> =>
     ipcRenderer.invoke(ipcChannels.captureRegion),
   captureWindow: (): Promise<CapturePlaceholderResponse> =>

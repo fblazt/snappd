@@ -18,6 +18,7 @@ import {
   type ShortcutStatus,
 } from '../shared/ipc';
 import { type AppSettings, normalizeSettings } from '../shared/settings';
+import { getCaptureFoundationState, openScreenRecordingSettings } from './capture-foundation';
 import { getSettingsFilePath, readSettings, writeSettings } from './settings-store';
 
 let preferencesWindow: BrowserWindow | null = null;
@@ -34,7 +35,7 @@ function createSecureWindow(): BrowserWindow {
     title: appInfo.name,
     show: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -42,6 +43,14 @@ function createSecureWindow(): BrowserWindow {
 
   window.webContents.on('will-navigate', (event) => {
     event.preventDefault();
+  });
+
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error(`Renderer failed to load: ${errorCode} ${errorDescription}`);
+  });
+
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`Renderer process gone: ${details.reason}`);
   });
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -200,6 +209,12 @@ function registerIpcHandlers(): void {
       shortcutStatus,
       settingsPath: getSettingsFilePath(),
     };
+  });
+  ipcMain.handle(ipcChannels.captureFoundationGet, async () => ({
+    foundation: await getCaptureFoundationState(),
+  }));
+  ipcMain.handle(ipcChannels.capturePermissionOpenSettings, async () => {
+    await openScreenRecordingSettings();
   });
   ipcMain.handle(ipcChannels.captureRegion, () => handleCapturePlaceholder('region'));
   ipcMain.handle(ipcChannels.captureWindow, () => handleCapturePlaceholder('window'));
