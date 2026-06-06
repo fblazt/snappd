@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   app,
@@ -14,7 +16,7 @@ import {
   screen,
   Tray,
 } from 'electron';
-import { appInfo } from '../shared/app-info';
+import { appInfo, formatScreenshotFilename } from '../shared/app-info';
 import type { CaptureResult, Rectangle } from '../shared/capture';
 import { clampRectToBounds, toPhysicalRect } from '../shared/geometry';
 import {
@@ -23,6 +25,7 @@ import {
   type CapturePlaceholderResponse,
   ipcChannels,
   type RegionSelectionPayload,
+  type SaveCaptureResponse,
   type ShortcutStatus,
 } from '../shared/ipc';
 import { type AppSettings, normalizeSettings } from '../shared/settings';
@@ -34,6 +37,8 @@ let tray: Tray | null = null;
 let settings: AppSettings;
 let shortcutStatus: ShortcutStatus = { region: 'not-registered' };
 let overlayWindows: BrowserWindow[] = [];
+let previewWindow: BrowserWindow | null = null;
+let latestPreviewCapture: CaptureResult | null = null;
 let activeRegionCapture: ((response: CaptureActionResponse) => void) | null = null;
 
 function createSecureWindow(): BrowserWindow {
@@ -94,6 +99,58 @@ function showPreferencesWindow(): void {
   preferencesWindow.on('closed', () => {
     preferencesWindow = null;
   });
+}
+
+function showPreviewWindow(capture: CaptureResult): void {
+  latestPreviewCapture = capture;
+
+  if (previewWindow) {
+    if (previewWindow.isMinimized()) {
+      previewWindow.restore();
+    }
+
+    previewWindow.reload();
+    previewWindow.show();
+    previewWindow.focus();
+    return;
+  }
+
+  previewWindow = new BrowserWindow({
+    width: 760,
+    height: 540,
+    minWidth: 480,
+    minHeight: 320,
+    title: `${appInfo.name} Preview`,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  previewWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+  previewWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  previewWindow.once('ready-to-show', () => {
+    previewWindow?.show();
+  });
+
+  previewWindow.on('closed', () => {
+    previewWindow = null;
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void previewWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/preview.html`);
+  } else {
+    void previewWindow.loadFile(join(__dirname, '../renderer/preview.html'));
+  }
+}
+
+function closePreviewWindow(): void {
+  previewWindow?.close();
 }
 
 function createTrayIcon(): NativeImage {
@@ -345,6 +402,10 @@ async function captureSelectedRegion(
     timestamp: new Date().toISOString(),
   };
 
+  if (settings.showPostCapturePreview) {
+    showPreviewWindow(result);
+  }
+
   return {
     mode: 'region',
     status: 'copied-to-clipboard',
@@ -359,6 +420,57 @@ function toGlobalRect(rect: Rectangle, display: Display): Rectangle {
     width: rect.width,
     height: rect.height,
   };
+}
+
+async function saveLatestPreviewCapture(): Promise<SaveCaptureResponse> {
+  if (!latestPreviewCapture) {
+    return {
+      status: 'failed',
+      message: 'No capture is available to save.',
+    };
+  }
+
+  try {
+    const saveFolder = expandHomeDirectory(settings.saveFolder);
+    const filePath = join(
+      saveFolder,
+      formatScreenshotFilename(new Date(latestPreviewCapture.timestamp)),
+    );
+    const image = nativeImage.createFromDataURL(latestPreviewCapture.image.dataUrl);
+
+    await mkdir(saveFolder, { recursive: true });
+    await writeFile(filePath, image.toPNG());
+
+    return {
+      status: 'saved',
+      filePath,
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'Could not save screenshot.',
+    };
+  }
+}
+
+function copyLatestPreviewCapture(): void {
+  if (!latestPreviewCapture) {
+    return;
+  }
+
+  clipboard.writeImage(nativeImage.createFromDataURL(latestPreviewCapture.image.dataUrl));
+}
+
+function expandHomeDirectory(path: string): string {
+  if (path === '~') {
+    return homedir();
+  }
+
+  if (path.startsWith('~/')) {
+    return join(homedir(), path.slice(2));
+  }
+
+  return path;
 }
 
 function applyDockVisibility(): void {
@@ -479,6 +591,14 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(ipcChannels.regionSelectionCancel, () => {
     cancelRegionCapture();
+  });
+  ipcMain.handle(ipcChannels.previewGetCapture, () => ({ capture: latestPreviewCapture }));
+  ipcMain.handle(ipcChannels.previewSave, () => saveLatestPreviewCapture());
+  ipcMain.handle(ipcChannels.previewCopy, () => {
+    copyLatestPreviewCapture();
+  });
+  ipcMain.handle(ipcChannels.previewClose, () => {
+    closePreviewWindow();
   });
 }
 

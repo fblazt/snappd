@@ -12,6 +12,10 @@ export const ipcChannels = {
   captureFullScreen: 'capture:full-screen',
   regionSelectionComplete: 'region-selection:complete',
   regionSelectionCancel: 'region-selection:cancel',
+  previewGetCapture: 'preview:get-capture',
+  previewSave: 'preview:save',
+  previewCopy: 'preview:copy',
+  previewClose: 'preview:close',
 } as const;
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels];
@@ -54,3 +58,17 @@ export type CaptureActionResponse =
     };
 
 export type CapturePlaceholderResponse = CaptureActionResponse;
+
+export interface PreviewCaptureResponse {
+  capture: CaptureResult | null;
+}
+
+export type SaveCaptureResponse =
+  | {
+      status: 'saved';
+      filePath: string;
+    }
+  | {
+      status: 'failed';
+      message: string;
+    };
