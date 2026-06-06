@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { appInfo } from '../../shared/app-info';
 import type { CaptureFoundationResponse, SettingsResponse } from '../../shared/ipc';
 import './styles.css';
@@ -11,6 +11,10 @@ export function App() {
   );
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const refreshCaptureFoundation = useCallback(() => {
+    void window.snappd.getCaptureFoundation().then(setCaptureFoundation);
+  }, []);
+
   useEffect(() => {
     void window.snappd
       .getAppInfo()
@@ -21,8 +25,14 @@ export function App() {
         setLoadError(error instanceof Error ? error.message : 'Could not load app info.');
       });
     void window.snappd.getSettings().then(setSettingsResponse);
-    void window.snappd.getCaptureFoundation().then(setCaptureFoundation);
-  }, []);
+    refreshCaptureFoundation();
+  }, [refreshCaptureFoundation]);
+
+  const shouldShowRecovery = captureFoundation
+    ? captureFoundation.foundation.permission.canRequestRecovery ||
+      captureFoundation.foundation.permission.status !== 'granted' ||
+      captureFoundation.foundation.sources.length === 0
+    : false;
 
   return (
     <main className="preferences-window">
@@ -93,15 +103,20 @@ export function App() {
                 <span>Displays</span>
                 <strong>{captureFoundation.foundation.displays.length}</strong>
               </div>
-              {captureFoundation.foundation.permission.canRequestRecovery ? (
-                <div className="settings-row action-row">
+              {shouldShowRecovery ? (
+                <div className="settings-row stacked">
                   <span>Recovery</span>
-                  <button
-                    type="button"
-                    onClick={() => void window.snappd.openScreenRecordingSettings()}
-                  >
-                    Open System Settings
-                  </button>
+                  <div className="button-group">
+                    <button
+                      type="button"
+                      onClick={() => void window.snappd.openScreenRecordingSettings()}
+                    >
+                      Open System Settings
+                    </button>
+                    <button type="button" onClick={refreshCaptureFoundation}>
+                      Check Again
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>

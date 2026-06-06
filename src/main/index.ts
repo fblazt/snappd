@@ -2,19 +2,27 @@ import { join } from 'node:path';
 import {
   app,
   BrowserWindow,
+  clipboard,
+  type Display,
+  desktopCapturer,
   globalShortcut,
   ipcMain,
   Menu,
   type NativeImage,
   Notification,
   nativeImage,
+  screen,
   Tray,
 } from 'electron';
 import { appInfo } from '../shared/app-info';
+import type { CaptureResult, Rectangle } from '../shared/capture';
+import { clampRectToBounds, toPhysicalRect } from '../shared/geometry';
 import {
+  type CaptureActionResponse,
   type CaptureMode,
   type CapturePlaceholderResponse,
   ipcChannels,
+  type RegionSelectionPayload,
   type ShortcutStatus,
 } from '../shared/ipc';
 import { type AppSettings, normalizeSettings } from '../shared/settings';
@@ -25,6 +33,8 @@ let preferencesWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let settings: AppSettings;
 let shortcutStatus: ShortcutStatus = { region: 'not-registered' };
+let overlayWindows: BrowserWindow[] = [];
+let activeRegionCapture: ((response: CaptureActionResponse) => void) | null = null;
 
 function createSecureWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -109,6 +119,248 @@ function handleCapturePlaceholder(mode: CaptureMode): CapturePlaceholderResponse
   };
 }
 
+async function startRegionCapture(): Promise<CaptureActionResponse> {
+  if (activeRegionCapture) {
+    return {
+      mode: 'region',
+      status: 'failed',
+      message: 'Region capture is already active.',
+    };
+  }
+
+  const permissionResponse = await verifyScreenCaptureAccess();
+
+  if (permissionResponse) {
+    showPreferencesWindow();
+    return permissionResponse;
+  }
+
+  const displays = screen.getAllDisplays();
+
+  if (displays.length === 0) {
+    return {
+      mode: 'region',
+      status: 'failed',
+      message: 'No displays were found.',
+    };
+  }
+
+  return new Promise((resolve) => {
+    activeRegionCapture = resolve;
+    overlayWindows = displays.map(createRegionOverlayWindow);
+    globalShortcut.register('Escape', cancelRegionCapture);
+  });
+}
+
+async function verifyScreenCaptureAccess(): Promise<CaptureActionResponse | null> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1, height: 1 },
+      fetchWindowIcons: false,
+    });
+
+    if (sources.length > 0) {
+      return null;
+    }
+  } catch (error) {
+    return {
+      mode: 'region',
+      status: 'permission-required',
+      message: error instanceof Error ? error.message : 'Snappd could not access screen sources.',
+    };
+  }
+
+  return {
+    mode: 'region',
+    status: 'permission-required',
+    message: 'Snappd could not access screen sources. Check Screen Recording permission.',
+  };
+}
+
+function createRegionOverlayWindow(display: Display): BrowserWindow {
+  const overlayWindow = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+
+  overlayWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'Escape') {
+      event.preventDefault();
+      cancelRegionCapture();
+    }
+  });
+
+  overlayWindow.once('ready-to-show', () => {
+    overlayWindow.show();
+    overlayWindow.focus();
+  });
+
+  overlayWindow.on('closed', () => {
+    overlayWindows = overlayWindows.filter((window) => window !== overlayWindow);
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void overlayWindow.loadURL(
+      `${process.env.ELECTRON_RENDERER_URL}/overlay.html?displayId=${display.id}`,
+    );
+  } else {
+    void overlayWindow.loadFile(join(__dirname, '../renderer/overlay.html'), {
+      query: { displayId: String(display.id) },
+    });
+  }
+
+  return overlayWindow;
+}
+
+async function completeRegionCapture(payload: RegionSelectionPayload): Promise<void> {
+  const resolve = activeRegionCapture;
+
+  if (!resolve) {
+    return;
+  }
+
+  activeRegionCapture = null;
+  closeOverlayWindows();
+
+  resolve(await captureSelectedRegion(payload));
+}
+
+function cancelRegionCapture(): void {
+  const resolve = activeRegionCapture;
+
+  activeRegionCapture = null;
+  closeOverlayWindows();
+  resolve?.({ mode: 'region', status: 'cancelled' });
+}
+
+function closeOverlayWindows(): void {
+  globalShortcut.unregister('Escape');
+
+  for (const overlayWindow of overlayWindows) {
+    if (!overlayWindow.isDestroyed()) {
+      overlayWindow.close();
+    }
+  }
+
+  overlayWindows = [];
+}
+
+async function captureSelectedRegion(
+  payload: RegionSelectionPayload,
+): Promise<CaptureActionResponse> {
+  const display = screen.getAllDisplays().find((candidate) => candidate.id === payload.displayId);
+
+  if (!display) {
+    return {
+      mode: 'region',
+      status: 'failed',
+      message: 'Selected display was not found.',
+    };
+  }
+
+  const selectedRect = clampRectToBounds(toGlobalRect(payload.rect, display), display.bounds);
+
+  if (selectedRect.width <= 0 || selectedRect.height <= 0) {
+    return { mode: 'region', status: 'cancelled' };
+  }
+
+  const physicalDisplaySize = {
+    width: Math.round(display.bounds.width * display.scaleFactor),
+    height: Math.round(display.bounds.height * display.scaleFactor),
+  };
+  let sources: Electron.DesktopCapturerSource[];
+
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: physicalDisplaySize,
+      fetchWindowIcons: false,
+    });
+  } catch (error) {
+    showPreferencesWindow();
+
+    return {
+      mode: 'region',
+      status: 'permission-required',
+      message: error instanceof Error ? error.message : 'Snappd could not access screen sources.',
+    };
+  }
+
+  const source = sources.find((candidate) => candidate.display_id === String(display.id));
+
+  if (!source) {
+    showPreferencesWindow();
+
+    return {
+      mode: 'region',
+      status: 'permission-required',
+      message: 'Snappd could not access this display. Check Screen Recording permission.',
+    };
+  }
+
+  const physicalRect = toPhysicalRect(selectedRect, display);
+  const croppedImage = source.thumbnail.crop(physicalRect);
+
+  if (croppedImage.isEmpty()) {
+    showPreferencesWindow();
+
+    return {
+      mode: 'region',
+      status: 'permission-required',
+      message: 'Snappd captured an empty image. Check Screen Recording permission.',
+    };
+  }
+
+  if (settings.automaticClipboardCopy) {
+    clipboard.writeImage(croppedImage);
+  }
+
+  const result: CaptureResult = {
+    image: { dataUrl: croppedImage.toDataURL() },
+    width: physicalRect.width,
+    height: physicalRect.height,
+    sourceKind: 'screen',
+    timestamp: new Date().toISOString(),
+  };
+
+  return {
+    mode: 'region',
+    status: 'copied-to-clipboard',
+    result,
+  };
+}
+
+function toGlobalRect(rect: Rectangle, display: Display): Rectangle {
+  return {
+    x: rect.x + display.bounds.x,
+    y: rect.y + display.bounds.y,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
 function applyDockVisibility(): void {
   if (settings.showDockIcon) {
     app.dock?.show();
@@ -121,7 +373,7 @@ function applyDockVisibility(): void {
 function registerShortcuts(): void {
   globalShortcut.unregisterAll();
   const registered = globalShortcut.register(settings.regionShortcut, () => {
-    handleCapturePlaceholder('region');
+    void startRegionCapture();
   });
 
   shortcutStatus = {
@@ -153,7 +405,7 @@ function buildTrayMenu(): Menu {
     {
       label: 'Capture Region',
       accelerator: settings.regionShortcut,
-      click: () => handleCapturePlaceholder('region'),
+      click: () => void startRegionCapture(),
     },
     {
       label: 'Capture Window',
@@ -216,9 +468,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.capturePermissionOpenSettings, async () => {
     await openScreenRecordingSettings();
   });
-  ipcMain.handle(ipcChannels.captureRegion, () => handleCapturePlaceholder('region'));
+  ipcMain.handle(ipcChannels.captureRegion, () => startRegionCapture());
   ipcMain.handle(ipcChannels.captureWindow, () => handleCapturePlaceholder('window'));
   ipcMain.handle(ipcChannels.captureFullScreen, () => handleCapturePlaceholder('full-screen'));
+  ipcMain.handle(
+    ipcChannels.regionSelectionComplete,
+    async (_event, payload: RegionSelectionPayload) => {
+      await completeRegionCapture(payload);
+    },
+  );
+  ipcMain.handle(ipcChannels.regionSelectionCancel, () => {
+    cancelRegionCapture();
+  });
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();

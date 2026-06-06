@@ -1,4 +1,4 @@
-import type { CaptureFoundationState } from './capture';
+import type { CaptureFoundationState, CaptureResult, Rectangle } from './capture';
 import type { AppSettings } from './settings';
 
 export const ipcChannels = {
@@ -10,6 +10,8 @@ export const ipcChannels = {
   captureRegion: 'capture:region',
   captureWindow: 'capture:window',
   captureFullScreen: 'capture:full-screen',
+  regionSelectionComplete: 'region-selection:complete',
+  regionSelectionCancel: 'region-selection:cancel',
 } as const;
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels];
@@ -34,7 +36,21 @@ export interface CaptureFoundationResponse {
 
 export type CaptureMode = 'region' | 'window' | 'full-screen';
 
-export interface CapturePlaceholderResponse {
-  mode: CaptureMode;
-  status: 'not-implemented';
+export interface RegionSelectionPayload {
+  displayId: number;
+  rect: Rectangle;
 }
+
+export type CaptureActionResponse =
+  | {
+      mode: CaptureMode;
+      status: 'not-implemented' | 'cancelled' | 'permission-required' | 'failed';
+      message?: string;
+    }
+  | {
+      mode: CaptureMode;
+      status: 'copied-to-clipboard';
+      result: CaptureResult;
+    };
+
+export type CapturePlaceholderResponse = CaptureActionResponse;

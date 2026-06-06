@@ -4,6 +4,7 @@ import {
   type CaptureFoundationResponse,
   type CapturePlaceholderResponse,
   ipcChannels,
+  type RegionSelectionPayload,
   type SettingsResponse,
 } from '../shared/ipc';
 import type { AppSettings } from '../shared/settings';
@@ -23,6 +24,9 @@ const snappd = {
     ipcRenderer.invoke(ipcChannels.captureWindow),
   captureFullScreen: (): Promise<CapturePlaceholderResponse> =>
     ipcRenderer.invoke(ipcChannels.captureFullScreen),
+  completeRegionSelection: (payload: RegionSelectionPayload): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.regionSelectionComplete, payload),
+  cancelRegionSelection: (): Promise<void> => ipcRenderer.invoke(ipcChannels.regionSelectionCancel),
 } as const;
 
 contextBridge.exposeInMainWorld('snappd', snappd);
