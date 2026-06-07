@@ -17,6 +17,9 @@ export const ipcChannels = {
   previewSave: 'preview:save',
   previewCopy: 'preview:copy',
   previewClose: 'preview:close',
+  sourcePickerGetSources: 'source-picker:get-sources',
+  sourcePickerSelect: 'source-picker:select',
+  sourcePickerCancel: 'source-picker:cancel',
 } as const;
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels];
@@ -78,3 +81,13 @@ export type SaveCaptureResponse =
       status: 'failed';
       message: string;
     };
+
+export interface SourcePickerItem {
+  id: string;
+  name: string;
+  thumbnailDataUrl: string;
+}
+
+export interface SourcePickerSourcesResponse {
+  sources: SourcePickerItem[];
+}

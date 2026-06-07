@@ -1,0 +1,109 @@
+:root {
+  background: #f5f5f7;
+  color: #1d1d1f;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.source-picker-window {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+header {
+  margin-bottom: 18px;
+}
+
+h1 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+
+p {
+  color: rgba(60, 60, 67, 0.72);
+  font-size: 13px;
+  margin: 0;
+}
+
+.source-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.source-card {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  color: inherit;
+  cursor: default;
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  padding: 10px;
+  text-align: left;
+}
+
+.source-card:hover {
+  background: #fff;
+}
+
+.source-card img {
+  align-self: center;
+  background: #d8d8de;
+  border-radius: 7px;
+  height: 104px;
+  justify-self: center;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.source-card span {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-state {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 18px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    background: #1f1f22;
+    color: #f5f5f7;
+  }
+
+  p {
+    color: rgba(235, 235, 245, 0.72);
+  }
+
+  .source-card,
+  .empty-state {
+    background: rgba(44, 44, 46, 0.86);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .source-card:hover {
+    background: rgba(58, 58, 60, 0.94);
+  }
+
+  .source-card img {
+    background: #111113;
+  }
+}

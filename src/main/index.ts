@@ -20,12 +20,12 @@ import {
 } from 'electron';
 import { appInfo } from '../shared/app-info';
 import type { CaptureResult, Rectangle } from '../shared/capture';
+import { displayContainingPoint } from '../shared/displays';
 import { expandHomeDirectory, screenshotFilePath } from '../shared/files';
 import { clampRectToBounds, toPhysicalRect } from '../shared/geometry';
 import {
   type CaptureActionResponse,
   type CaptureMode,
-  type CapturePlaceholderResponse,
   ipcChannels,
   type RegionSelectionPayload,
   type SaveCaptureResponse,
@@ -42,8 +42,11 @@ let settings: AppSettings;
 let shortcutStatus: ShortcutStatus = { region: 'not-registered' };
 let overlayWindows: BrowserWindow[] = [];
 let previewWindow: BrowserWindow | null = null;
+let sourcePickerWindow: BrowserWindow | null = null;
 let latestPreviewCapture: CaptureResult | null = null;
+let windowCaptureSources: Electron.DesktopCapturerSource[] = [];
 let activeRegionCapture: ((response: CaptureActionResponse) => void) | null = null;
+let activeWindowCapture: ((response: CaptureActionResponse) => void) | null = null;
 
 function createSecureWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -157,6 +160,61 @@ function closePreviewWindow(): void {
   previewWindow?.close();
 }
 
+function showSourcePickerWindow(): void {
+  if (sourcePickerWindow) {
+    if (sourcePickerWindow.isMinimized()) {
+      sourcePickerWindow.restore();
+    }
+
+    sourcePickerWindow.show();
+    sourcePickerWindow.focus();
+    return;
+  }
+
+  sourcePickerWindow = new BrowserWindow({
+    width: 840,
+    height: 620,
+    minWidth: 520,
+    minHeight: 360,
+    title: 'Choose Window',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  sourcePickerWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+  sourcePickerWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  sourcePickerWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'Escape') {
+      event.preventDefault();
+      cancelWindowCapture();
+    }
+  });
+
+  sourcePickerWindow.once('ready-to-show', () => {
+    sourcePickerWindow?.show();
+  });
+
+  sourcePickerWindow.on('closed', () => {
+    sourcePickerWindow = null;
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void sourcePickerWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/source-picker.html`);
+  } else {
+    void sourcePickerWindow.loadFile(join(__dirname, '../renderer/source-picker.html'));
+  }
+}
+
+function closeSourcePickerWindow(): void {
+  sourcePickerWindow?.close();
+}
+
 function createTrayIcon(): NativeImage {
   const iconSvg = encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
@@ -171,15 +229,6 @@ function createTrayIcon(): NativeImage {
   return image;
 }
 
-function handleCapturePlaceholder(mode: CaptureMode): CapturePlaceholderResponse {
-  console.info(`Capture ${mode} requested.`);
-
-  return {
-    mode,
-    status: 'not-implemented',
-  };
-}
-
 async function startRegionCapture(): Promise<CaptureActionResponse> {
   if (activeRegionCapture) {
     return {
@@ -189,7 +238,7 @@ async function startRegionCapture(): Promise<CaptureActionResponse> {
     };
   }
 
-  const permissionResponse = await verifyScreenCaptureAccess();
+  const permissionResponse = await verifyScreenCaptureAccess('region');
 
   if (permissionResponse) {
     showPreferencesWindow();
@@ -213,7 +262,7 @@ async function startRegionCapture(): Promise<CaptureActionResponse> {
   });
 }
 
-async function verifyScreenCaptureAccess(): Promise<CaptureActionResponse | null> {
+async function verifyScreenCaptureAccess(mode: CaptureMode): Promise<CaptureActionResponse | null> {
   try {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
@@ -226,14 +275,14 @@ async function verifyScreenCaptureAccess(): Promise<CaptureActionResponse | null
     }
   } catch (error) {
     return {
-      mode: 'region',
+      mode,
       status: 'permission-required',
       message: error instanceof Error ? error.message : 'Snappd could not access screen sources.',
     };
   }
 
   return {
-    mode: 'region',
+    mode,
     status: 'permission-required',
     message: 'Snappd could not access screen sources. Check Screen Recording permission.',
   };
@@ -417,6 +466,179 @@ async function captureSelectedRegion(
   };
 }
 
+async function captureFullScreen(): Promise<CaptureActionResponse> {
+  const permissionResponse = await verifyScreenCaptureAccess('full-screen');
+
+  if (permissionResponse) {
+    showPreferencesWindow();
+    return permissionResponse;
+  }
+
+  const display = displayContainingCursor() ?? screen.getPrimaryDisplay();
+  const physicalDisplaySize = {
+    width: Math.round(display.bounds.width * display.scaleFactor),
+    height: Math.round(display.bounds.height * display.scaleFactor),
+  };
+
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: physicalDisplaySize,
+      fetchWindowIcons: false,
+    });
+    const source = sources.find((candidate) => candidate.display_id === String(display.id));
+
+    if (!source || source.thumbnail.isEmpty()) {
+      return {
+        mode: 'full-screen',
+        status: 'permission-required',
+        message: 'Snappd could not capture this display. Check Screen Recording permission.',
+      };
+    }
+
+    return completeImageCapture('full-screen', source.thumbnail, 'screen');
+  } catch (error) {
+    showPreferencesWindow();
+
+    return {
+      mode: 'full-screen',
+      status: 'permission-required',
+      message: error instanceof Error ? error.message : 'Snappd could not access screen sources.',
+    };
+  }
+}
+
+async function startWindowCapture(): Promise<CaptureActionResponse> {
+  if (activeWindowCapture) {
+    return {
+      mode: 'window',
+      status: 'failed',
+      message: 'Window capture is already active.',
+    };
+  }
+
+  try {
+    windowCaptureSources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 480, height: 300 },
+      fetchWindowIcons: false,
+    });
+  } catch (error) {
+    showPreferencesWindow();
+
+    return {
+      mode: 'window',
+      status: 'permission-required',
+      message: error instanceof Error ? error.message : 'Snappd could not access window sources.',
+    };
+  }
+
+  if (windowCaptureSources.length === 0) {
+    return {
+      mode: 'window',
+      status: 'failed',
+      message: 'No capturable windows were found.',
+    };
+  }
+
+  return new Promise((resolve) => {
+    activeWindowCapture = resolve;
+    showSourcePickerWindow();
+  });
+}
+
+async function completeWindowCapture(sourceId: string): Promise<void> {
+  const resolve = activeWindowCapture;
+
+  if (!resolve) {
+    return;
+  }
+
+  activeWindowCapture = null;
+  closeSourcePickerWindow();
+  windowCaptureSources = [];
+
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: largestPhysicalDisplaySize(),
+      fetchWindowIcons: false,
+    });
+    const source = sources.find((candidate) => candidate.id === sourceId);
+
+    if (!source || source.thumbnail.isEmpty()) {
+      resolve({
+        mode: 'window',
+        status: 'failed',
+        message: 'Selected window could not be captured.',
+      });
+      return;
+    }
+
+    resolve(completeImageCapture('window', source.thumbnail, 'window'));
+  } catch (error) {
+    resolve({
+      mode: 'window',
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'Selected window could not be captured.',
+    });
+  }
+}
+
+function cancelWindowCapture(): void {
+  const resolve = activeWindowCapture;
+
+  activeWindowCapture = null;
+  windowCaptureSources = [];
+  closeSourcePickerWindow();
+  resolve?.({ mode: 'window', status: 'cancelled' });
+}
+
+function completeImageCapture(
+  mode: CaptureMode,
+  image: NativeImage,
+  sourceKind: CaptureResult['sourceKind'],
+): CaptureActionResponse {
+  if (settings.automaticClipboardCopy) {
+    clipboard.writeImage(image);
+  }
+
+  const size = image.getSize();
+  const result: CaptureResult = {
+    image: { dataUrl: image.toDataURL() },
+    width: size.width,
+    height: size.height,
+    sourceKind,
+    timestamp: new Date().toISOString(),
+  };
+
+  if (settings.showPostCapturePreview) {
+    showPreviewWindow(result);
+  }
+
+  return {
+    mode,
+    status: 'copied-to-clipboard',
+    result,
+  };
+}
+
+function displayContainingCursor(): Display | null {
+  const cursor = screen.getCursorScreenPoint();
+
+  return displayContainingPoint(screen.getAllDisplays(), cursor);
+}
+
+function largestPhysicalDisplaySize(): { width: number; height: number } {
+  return screen.getAllDisplays().reduce(
+    (size, display) => ({
+      width: Math.max(size.width, Math.round(display.bounds.width * display.scaleFactor)),
+      height: Math.max(size.height, Math.round(display.bounds.height * display.scaleFactor)),
+    }),
+    { width: 1920, height: 1080 },
+  );
+}
+
 function toGlobalRect(rect: Rectangle, display: Display): Rectangle {
   return {
     x: rect.x + display.bounds.x,
@@ -534,11 +756,11 @@ function buildTrayMenu(): Menu {
     },
     {
       label: 'Capture Window',
-      click: () => handleCapturePlaceholder('window'),
+      click: () => void startWindowCapture(),
     },
     {
       label: 'Capture Full Screen',
-      click: () => handleCapturePlaceholder('full-screen'),
+      click: () => void captureFullScreen(),
     },
     { type: 'separator' },
     {
@@ -613,8 +835,8 @@ function registerIpcHandlers(): void {
     await openScreenRecordingSettings();
   });
   ipcMain.handle(ipcChannels.captureRegion, () => startRegionCapture());
-  ipcMain.handle(ipcChannels.captureWindow, () => handleCapturePlaceholder('window'));
-  ipcMain.handle(ipcChannels.captureFullScreen, () => handleCapturePlaceholder('full-screen'));
+  ipcMain.handle(ipcChannels.captureWindow, () => startWindowCapture());
+  ipcMain.handle(ipcChannels.captureFullScreen, () => captureFullScreen());
   ipcMain.handle(
     ipcChannels.regionSelectionComplete,
     async (_event, payload: RegionSelectionPayload) => {
@@ -631,6 +853,24 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(ipcChannels.previewClose, () => {
     closePreviewWindow();
+  });
+  ipcMain.handle(ipcChannels.sourcePickerGetSources, () => ({
+    sources: windowCaptureSources.map((source) => ({
+      id: source.id,
+      name: source.name,
+      thumbnailDataUrl: source.thumbnail.toDataURL(),
+    })),
+  }));
+  ipcMain.handle(ipcChannels.sourcePickerSelect, async (_event, sourceId: unknown) => {
+    if (typeof sourceId !== 'string') {
+      cancelWindowCapture();
+      return;
+    }
+
+    await completeWindowCapture(sourceId);
+  });
+  ipcMain.handle(ipcChannels.sourcePickerCancel, () => {
+    cancelWindowCapture();
   });
 }
 

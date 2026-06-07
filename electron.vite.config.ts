@@ -32,6 +32,7 @@ export default defineConfig({
           index: resolve(__dirname, 'src/renderer/index.html'),
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
           preview: resolve(__dirname, 'src/renderer/preview.html'),
+          sourcePicker: resolve(__dirname, 'src/renderer/source-picker.html'),
         },
       },
     },

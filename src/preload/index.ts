@@ -9,6 +9,7 @@ import {
   type SaveCaptureResponse,
   type SaveFolderSelectionResponse,
   type SettingsResponse,
+  type SourcePickerSourcesResponse,
 } from '../shared/ipc';
 import type { AppSettings } from '../shared/settings';
 
@@ -39,6 +40,11 @@ const snappd = {
     ipcRenderer.invoke(ipcChannels.previewSave),
   copyPreviewCapture: (): Promise<void> => ipcRenderer.invoke(ipcChannels.previewCopy),
   closePreview: (): Promise<void> => ipcRenderer.invoke(ipcChannels.previewClose),
+  getSourcePickerSources: (): Promise<SourcePickerSourcesResponse> =>
+    ipcRenderer.invoke(ipcChannels.sourcePickerGetSources),
+  selectSourcePickerSource: (sourceId: string): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.sourcePickerSelect, sourceId),
+  cancelSourcePicker: (): Promise<void> => ipcRenderer.invoke(ipcChannels.sourcePickerCancel),
 } as const;
 
 contextBridge.exposeInMainWorld('snappd', snappd);
