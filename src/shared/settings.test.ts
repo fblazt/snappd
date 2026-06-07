@@ -36,4 +36,23 @@ describe('normalizeSettings', () => {
       }),
     ).toEqual(defaultSettings);
   });
+
+  it('preserves valid fields while replacing invalid fields', () => {
+    expect(
+      normalizeSettings({
+        regionShortcut: 'Command+Shift+7',
+        saveFolder: '',
+        launchAtLogin: true,
+        showDockIcon: 'no',
+        showPostCapturePreview: false,
+        automaticClipboardCopy: false,
+      }),
+    ).toEqual({
+      ...defaultSettings,
+      regionShortcut: 'Command+Shift+7',
+      launchAtLogin: true,
+      showPostCapturePreview: false,
+      automaticClipboardCopy: false,
+    });
+  });
 });

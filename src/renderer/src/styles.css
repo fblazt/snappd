@@ -22,6 +22,10 @@ textarea {
   font: inherit;
 }
 
+label {
+  cursor: default;
+}
+
 .preferences-window {
   background: #f5f5f7;
   display: grid;
@@ -201,19 +205,77 @@ button:hover:not(:disabled) {
   background: #f5f5f7;
 }
 
+input[type="checkbox"] {
+  justify-self: end;
+}
+
+.text-input {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(60, 60, 67, 0.22);
+  border-radius: 7px;
+  color: #1d1d1f;
+  justify-self: end;
+  min-height: 28px;
+  padding: 4px 8px;
+  text-align: right;
+  width: min(100%, 240px);
+}
+
+.path-control {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.path-control code {
+  min-width: 0;
+}
+
+.shortcut-control {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  min-width: 0;
+}
+
+.shortcut-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.shortcut-presets button {
+  font-size: 12px;
+  min-height: 26px;
+  padding-inline: 9px;
+}
+
 .button-group {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
 }
 
+.error-message,
+.status-message {
+  border-radius: 10px;
+  margin-top: 16px;
+  padding: 10px 12px;
+}
+
 .error-message {
   background: #fff2f2;
   border: 1px solid #ffd6d6;
-  border-radius: 10px;
   color: #b42318;
-  margin-top: 16px;
-  padding: 10px 12px;
+}
+
+.status-message {
+  background: rgba(52, 199, 89, 0.12);
+  border: 1px solid rgba(52, 199, 89, 0.28);
+  color: #176f2c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -273,5 +335,15 @@ button:hover:not(:disabled) {
 
   button:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.14);
+  }
+
+  .text-input {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.14);
+    color: #f5f5f7;
+  }
+
+  .status-message {
+    color: #7ee083;
   }
 }

@@ -1,18 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import { appInfo } from '../../shared/app-info';
 import type { CaptureFoundationResponse, SettingsResponse } from '../../shared/ipc';
+import type { AppSettings } from '../../shared/settings';
 import './styles.css';
 
 export function App() {
   const [appName, setAppName] = useState<string>(appInfo.name);
   const [settingsResponse, setSettingsResponse] = useState<SettingsResponse | null>(null);
+  const [draftSettings, setDraftSettings] = useState<AppSettings | null>(null);
   const [captureFoundation, setCaptureFoundation] = useState<CaptureFoundationResponse | null>(
     null,
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string>('');
 
   const refreshCaptureFoundation = useCallback(() => {
     void window.snappd.getCaptureFoundation().then(setCaptureFoundation);
+  }, []);
+
+  const loadSettings = useCallback(() => {
+    void window.snappd.getSettings().then((response) => {
+      setSettingsResponse(response);
+      setDraftSettings(response.settings);
+    });
   }, []);
 
   useEffect(() => {
@@ -24,9 +34,37 @@ export function App() {
       .catch((error: unknown) => {
         setLoadError(error instanceof Error ? error.message : 'Could not load app info.');
       });
-    void window.snappd.getSettings().then(setSettingsResponse);
+    loadSettings();
     refreshCaptureFoundation();
-  }, [refreshCaptureFoundation]);
+  }, [loadSettings, refreshCaptureFoundation]);
+
+  const saveSettings = useCallback(
+    (nextSettings = draftSettings) => {
+      if (!nextSettings) {
+        return;
+      }
+
+      setSaveStatus('Saving…');
+      void window.snappd.updateSettings(nextSettings).then((response) => {
+        setSettingsResponse(response);
+        setDraftSettings(response.settings);
+        setSaveStatus(response.message ?? 'Saved');
+      });
+    },
+    [draftSettings],
+  );
+
+  const selectSaveFolder = () => {
+    void window.snappd.selectSaveFolder().then((response) => {
+      if (!response.filePath || !draftSettings) {
+        return;
+      }
+
+      const nextSettings = { ...draftSettings, saveFolder: response.filePath };
+      setDraftSettings(nextSettings);
+      saveSettings(nextSettings);
+    });
+  };
 
   const shouldShowRecovery = captureFoundation
     ? captureFoundation.foundation.permission.canRequestRecovery ||
@@ -44,10 +82,10 @@ export function App() {
           <button type="button" className="sidebar-item active">
             General
           </button>
-          <button type="button" className="sidebar-item" disabled>
+          <button type="button" className="sidebar-item">
             Capture
           </button>
-          <button type="button" className="sidebar-item" disabled>
+          <button type="button" className="sidebar-item">
             Shortcuts
           </button>
         </nav>
@@ -60,19 +98,45 @@ export function App() {
         </header>
 
         {loadError ? <p className="error-message">{loadError}</p> : null}
+        {settingsResponse?.message ? (
+          <p className="error-message">{settingsResponse.message}</p>
+        ) : null}
+        {saveStatus ? <p className="status-message">{saveStatus}</p> : null}
 
         <section className="settings-group" aria-labelledby="general-heading">
           <h2 id="general-heading">General</h2>
-          {settingsResponse ? (
+          {draftSettings && settingsResponse ? (
             <div className="settings-card">
-              <div className="settings-row">
-                <span>Region shortcut</span>
-                <code>{settingsResponse.settings.regionShortcut}</code>
-              </div>
-              <div className="settings-row">
-                <span>Shortcut status</span>
-                <strong>{settingsResponse.shortcutStatus.region}</strong>
-              </div>
+              <label className="settings-row">
+                <span>Launch at login</span>
+                <input
+                  type="checkbox"
+                  checked={draftSettings.launchAtLogin}
+                  onChange={(event) => {
+                    const nextSettings = {
+                      ...draftSettings,
+                      launchAtLogin: event.currentTarget.checked,
+                    };
+                    setDraftSettings(nextSettings);
+                    saveSettings(nextSettings);
+                  }}
+                />
+              </label>
+              <label className="settings-row">
+                <span>Show Dock icon</span>
+                <input
+                  type="checkbox"
+                  checked={draftSettings.showDockIcon}
+                  onChange={(event) => {
+                    const nextSettings = {
+                      ...draftSettings,
+                      showDockIcon: event.currentTarget.checked,
+                    };
+                    setDraftSettings(nextSettings);
+                    saveSettings(nextSettings);
+                  }}
+                />
+              </label>
               <div className="settings-row stacked">
                 <span>Settings file</span>
                 <code>{settingsResponse.settingsPath}</code>
@@ -80,6 +144,123 @@ export function App() {
             </div>
           ) : (
             <div className="settings-card placeholder">Loading settings…</div>
+          )}
+        </section>
+
+        <section className="settings-group" aria-labelledby="capture-heading">
+          <h2 id="capture-heading">Capture</h2>
+          {draftSettings ? (
+            <div className="settings-card">
+              <label className="settings-row">
+                <span>Post-capture preview</span>
+                <input
+                  type="checkbox"
+                  checked={draftSettings.showPostCapturePreview}
+                  onChange={(event) => {
+                    const nextSettings = {
+                      ...draftSettings,
+                      showPostCapturePreview: event.currentTarget.checked,
+                    };
+                    setDraftSettings(nextSettings);
+                    saveSettings(nextSettings);
+                  }}
+                />
+              </label>
+              <label className="settings-row">
+                <span>Copy captures automatically</span>
+                <input
+                  type="checkbox"
+                  checked={draftSettings.automaticClipboardCopy}
+                  onChange={(event) => {
+                    const nextSettings = {
+                      ...draftSettings,
+                      automaticClipboardCopy: event.currentTarget.checked,
+                    };
+                    setDraftSettings(nextSettings);
+                    saveSettings(nextSettings);
+                  }}
+                />
+              </label>
+              <div className="settings-row stacked">
+                <span>Save folder</span>
+                <div className="path-control">
+                  <code>{draftSettings.saveFolder}</code>
+                  <button type="button" onClick={selectSaveFolder}>
+                    Choose…
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="settings-card placeholder">Loading capture settings…</div>
+          )}
+        </section>
+
+        <section className="settings-group" aria-labelledby="shortcuts-heading">
+          <h2 id="shortcuts-heading">Shortcuts</h2>
+          {draftSettings && settingsResponse ? (
+            <div className="settings-card">
+              <label className="settings-row stacked">
+                <span>Region shortcut</span>
+                <div className="shortcut-control">
+                  <div className="path-control">
+                    <input
+                      className="text-input"
+                      type="text"
+                      value={draftSettings.regionShortcut}
+                      onChange={(event) => {
+                        setDraftSettings({
+                          ...draftSettings,
+                          regionShortcut: event.currentTarget.value,
+                        });
+                      }}
+                      placeholder="Command+Shift+9"
+                      onFocus={() => {
+                        setSaveStatus('Type an Electron accelerator, for example Command+Shift+9.');
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.currentTarget.blur();
+                          return;
+                        }
+
+                        if (event.key === 'Enter') {
+                          saveSettings({
+                            ...draftSettings,
+                            regionShortcut: event.currentTarget.value,
+                          });
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
+                    <button type="button" onClick={() => saveSettings()}>
+                      Save
+                    </button>
+                  </div>
+                  <div className="shortcut-presets">
+                    {['Command+Shift+9', 'Command+Shift+2', 'Command+Option+2'].map((shortcut) => (
+                      <button
+                        type="button"
+                        key={shortcut}
+                        onClick={() => {
+                          const nextSettings = { ...draftSettings, regionShortcut: shortcut };
+                          setDraftSettings(nextSettings);
+                          saveSettings(nextSettings);
+                        }}
+                      >
+                        {shortcut}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </label>
+              <div className="settings-row">
+                <span>Shortcut status</span>
+                <strong>{settingsResponse.shortcutStatus.region}</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="settings-card placeholder">Loading shortcuts…</div>
           )}
         </section>
 

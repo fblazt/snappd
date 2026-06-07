@@ -7,6 +7,7 @@ import {
   type PreviewCaptureResponse,
   type RegionSelectionPayload,
   type SaveCaptureResponse,
+  type SaveFolderSelectionResponse,
   type SettingsResponse,
 } from '../shared/ipc';
 import type { AppSettings } from '../shared/settings';
@@ -16,6 +17,9 @@ const snappd = {
   getSettings: (): Promise<SettingsResponse> => ipcRenderer.invoke(ipcChannels.settingsGet),
   updateSettings: (settings: AppSettings): Promise<SettingsResponse> =>
     ipcRenderer.invoke(ipcChannels.settingsUpdate, settings),
+  selectSaveFolder: (): Promise<SaveFolderSelectionResponse> =>
+    ipcRenderer.invoke(ipcChannels.settingsSelectSaveFolder),
+
   getCaptureFoundation: (): Promise<CaptureFoundationResponse> =>
     ipcRenderer.invoke(ipcChannels.captureFoundationGet),
   openScreenRecordingSettings: (): Promise<void> =>

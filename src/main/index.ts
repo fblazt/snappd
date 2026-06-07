@@ -7,17 +7,20 @@ import {
   clipboard,
   type Display,
   desktopCapturer,
+  dialog,
   globalShortcut,
   ipcMain,
   Menu,
   type NativeImage,
   Notification,
   nativeImage,
+  type OpenDialogOptions,
   screen,
   Tray,
 } from 'electron';
-import { appInfo, formatScreenshotFilename } from '../shared/app-info';
+import { appInfo } from '../shared/app-info';
 import type { CaptureResult, Rectangle } from '../shared/capture';
+import { expandHomeDirectory, screenshotFilePath } from '../shared/files';
 import { clampRectToBounds, toPhysicalRect } from '../shared/geometry';
 import {
   type CaptureActionResponse,
@@ -29,6 +32,7 @@ import {
   type ShortcutStatus,
 } from '../shared/ipc';
 import { type AppSettings, normalizeSettings } from '../shared/settings';
+import { isValidShortcut } from '../shared/shortcuts';
 import { getCaptureFoundationState, openScreenRecordingSettings } from './capture-foundation';
 import { getSettingsFilePath, readSettings, writeSettings } from './settings-store';
 
@@ -431,10 +435,11 @@ async function saveLatestPreviewCapture(): Promise<SaveCaptureResponse> {
   }
 
   try {
-    const saveFolder = expandHomeDirectory(settings.saveFolder);
-    const filePath = join(
-      saveFolder,
-      formatScreenshotFilename(new Date(latestPreviewCapture.timestamp)),
+    const saveFolder = expandHomeDirectory(settings.saveFolder, homedir());
+    const filePath = screenshotFilePath(
+      settings.saveFolder,
+      latestPreviewCapture.timestamp,
+      homedir(),
     );
     const image = nativeImage.createFromDataURL(latestPreviewCapture.image.dataUrl);
 
@@ -461,18 +466,6 @@ function copyLatestPreviewCapture(): void {
   clipboard.writeImage(nativeImage.createFromDataURL(latestPreviewCapture.image.dataUrl));
 }
 
-function expandHomeDirectory(path: string): string {
-  if (path === '~') {
-    return homedir();
-  }
-
-  if (path.startsWith('~/')) {
-    return join(homedir(), path.slice(2));
-  }
-
-  return path;
-}
-
 function applyDockVisibility(): void {
   if (settings.showDockIcon) {
     app.dock?.show();
@@ -482,8 +475,28 @@ function applyDockVisibility(): void {
   app.dock?.hide();
 }
 
+function applyLaunchAtLogin(): void {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  app.setLoginItemSettings({
+    openAtLogin: settings.launchAtLogin,
+  });
+}
+
+function settingsResponse(message?: string) {
+  return {
+    settings,
+    shortcutStatus,
+    settingsPath: getSettingsFilePath(),
+    ...(message ? { message } : {}),
+  };
+}
+
 function registerShortcuts(): void {
   globalShortcut.unregisterAll();
+
   const registered = globalShortcut.register(settings.regionShortcut, () => {
     void startRegionCapture();
   });
@@ -551,27 +564,46 @@ function createTray(): void {
   refreshTrayMenu();
 }
 
-async function updateSettings(nextSettings: unknown): Promise<void> {
-  settings = await writeSettings(normalizeSettings(nextSettings));
+async function updateSettings(nextSettings: unknown): Promise<string | undefined> {
+  const normalizedSettings = normalizeSettings(nextSettings);
+
+  if (!isValidShortcut(normalizedSettings.regionShortcut)) {
+    return 'Shortcut must include at least one modifier and a key.';
+  }
+
+  settings = await writeSettings(normalizedSettings);
   applyDockVisibility();
+  applyLaunchAtLogin();
   registerShortcuts();
   refreshTrayMenu();
+
+  if (shortcutStatus.region === 'conflict') {
+    return `Could not register ${settings.regionShortcut}. It may already be used by another app.`;
+  }
+
+  return undefined;
 }
 
 function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.appInfo, () => ({ name: appInfo.name }));
-  ipcMain.handle(ipcChannels.settingsGet, () => ({
-    settings,
-    shortcutStatus,
-    settingsPath: getSettingsFilePath(),
-  }));
+  ipcMain.handle(ipcChannels.settingsGet, () => settingsResponse());
   ipcMain.handle(ipcChannels.settingsUpdate, async (_event, nextSettings: unknown) => {
-    await updateSettings(nextSettings);
+    const message = await updateSettings(nextSettings);
+
+    return settingsResponse(message);
+  });
+  ipcMain.handle(ipcChannels.settingsSelectSaveFolder, async () => {
+    const options: OpenDialogOptions = {
+      title: 'Choose Save Folder',
+      defaultPath: expandHomeDirectory(settings.saveFolder, homedir()),
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const result = preferencesWindow
+      ? await dialog.showOpenDialog(preferencesWindow, options)
+      : await dialog.showOpenDialog(options);
 
     return {
-      settings,
-      shortcutStatus,
-      settingsPath: getSettingsFilePath(),
+      filePath: result.canceled ? null : (result.filePaths[0] ?? null),
     };
   });
   ipcMain.handle(ipcChannels.captureFoundationGet, async () => ({
@@ -616,6 +648,7 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     settings = await readSettings();
     applyDockVisibility();
+    applyLaunchAtLogin();
     registerIpcHandlers();
     registerShortcuts();
     createTray();

@@ -5,6 +5,7 @@ export const ipcChannels = {
   appInfo: 'app:info',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  settingsSelectSaveFolder: 'settings:select-save-folder',
   captureFoundationGet: 'capture:foundation:get',
   capturePermissionOpenSettings: 'capture:permission:open-settings',
   captureRegion: 'capture:region',
@@ -28,6 +29,11 @@ export interface SettingsResponse {
   settings: AppSettings;
   shortcutStatus: ShortcutStatus;
   settingsPath: string;
+  message?: string;
+}
+
+export interface SaveFolderSelectionResponse {
+  filePath: string | null;
 }
 
 export interface ShortcutStatus {
