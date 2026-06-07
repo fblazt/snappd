@@ -20,6 +20,10 @@ export const ipcChannels = {
   sourcePickerGetSources: 'source-picker:get-sources',
   sourcePickerSelect: 'source-picker:select',
   sourcePickerCancel: 'source-picker:cancel',
+  annotationOpen: 'annotation:open',
+  annotationCopy: 'annotation:copy',
+  annotationSave: 'annotation:save',
+  annotationClose: 'annotation:close',
 } as const;
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels];
@@ -90,4 +94,10 @@ export interface SourcePickerItem {
 
 export interface SourcePickerSourcesResponse {
   sources: SourcePickerItem[];
+}
+
+export interface AnnotationImagePayload {
+  dataUrl: string;
+  width: number;
+  height: number;
 }

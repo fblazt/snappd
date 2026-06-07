@@ -1,0 +1,173 @@
+:root {
+  background: #1f1f22;
+  color: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.annotation-window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+}
+
+.annotation-toolbar {
+  align-items: center;
+  background: rgba(44, 44, 46, 0.96);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 14px;
+}
+
+.toolbar-section {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.title-section {
+  align-items: flex-start;
+  display: grid;
+  gap: 2px;
+  min-width: 112px;
+}
+
+h1 {
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+p {
+  color: rgba(235, 235, 245, 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+  margin: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-divider {
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.12);
+  width: 1px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+button {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #f5f5f7;
+  cursor: default;
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
+button:hover,
+button.active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.icon-button {
+  align-items: center;
+  display: inline-flex;
+  height: 38px;
+  justify-content: center;
+  padding: 0;
+  width: 38px;
+}
+
+.icon-button svg {
+  fill: none;
+  height: 22px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 22px;
+}
+
+.icon-button.active {
+  background: #0a84ff;
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+
+.color-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  border-radius: 999px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  width: 24px;
+}
+
+.swatch.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.stroke-control {
+  align-items: center;
+  color: rgba(235, 235, 245, 0.72);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.stroke-control input {
+  width: 96px;
+}
+
+.toolbar-actions button {
+  min-width: 58px;
+}
+
+.canvas-stage {
+  align-items: center;
+  background: #111113;
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+}
+
+canvas {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 16px 70px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  type AnnotationImagePayload,
   type AppInfoResponse,
   type CaptureFoundationResponse,
   type CapturePlaceholderResponse,
@@ -45,6 +46,12 @@ const snappd = {
   selectSourcePickerSource: (sourceId: string): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.sourcePickerSelect, sourceId),
   cancelSourcePicker: (): Promise<void> => ipcRenderer.invoke(ipcChannels.sourcePickerCancel),
+  openAnnotationEditor: (): Promise<void> => ipcRenderer.invoke(ipcChannels.annotationOpen),
+  copyAnnotatedCapture: (payload: AnnotationImagePayload): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.annotationCopy, payload),
+  saveAnnotatedCapture: (payload: AnnotationImagePayload): Promise<SaveCaptureResponse> =>
+    ipcRenderer.invoke(ipcChannels.annotationSave, payload),
+  closeAnnotationEditor: (): Promise<void> => ipcRenderer.invoke(ipcChannels.annotationClose),
 } as const;
 
 contextBridge.exposeInMainWorld('snappd', snappd);

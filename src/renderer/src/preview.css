@@ -12,6 +12,17 @@ body {
   margin: 0;
 }
 
+button,
+input {
+  font: inherit;
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
 button {
   appearance: none;
   background: rgba(255, 255, 255, 0.12);
@@ -19,25 +30,95 @@ button {
   border-radius: 7px;
   color: #f5f5f7;
   cursor: default;
-  font: inherit;
   font-size: 13px;
   font-weight: 500;
   min-height: 28px;
   padding: 4px 12px;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled),
+button.active {
   background: rgba(255, 255, 255, 0.18);
-}
-
-button:disabled {
-  color: rgba(235, 235, 245, 0.36);
 }
 
 .preview-window {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
+}
+
+.annotation-toolbar {
+  align-items: center;
+  background: rgba(44, 44, 46, 0.96);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 14px;
+}
+
+.tool-list,
+.color-list {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.toolbar-divider {
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.12);
+  width: 1px;
+}
+
+.icon-button {
+  align-items: center;
+  display: inline-flex;
+  height: 38px;
+  justify-content: center;
+  padding: 0;
+  width: 38px;
+}
+
+.icon-button svg {
+  fill: none;
+  height: 22px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 22px;
+}
+
+.icon-button.active {
+  background: #0a84ff;
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+
+.swatch {
+  border-radius: 999px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  width: 24px;
+}
+
+.swatch.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.stroke-control {
+  align-items: center;
+  color: rgba(235, 235, 245, 0.72);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.stroke-control input {
+  width: 96px;
 }
 
 .image-panel {
@@ -47,15 +128,38 @@ button:disabled {
   justify-content: center;
   min-height: 0;
   overflow: auto;
-  padding: 18px;
+  padding: 32px;
 }
 
-img {
+.canvas-wrap {
+  display: inline-block;
+  line-height: 0;
+  position: relative;
+}
+
+canvas {
+  background: #fff;
   border-radius: 6px;
   box-shadow: 0 16px 60px rgba(0, 0, 0, 0.42);
-  max-height: 100%;
-  max-width: 100%;
-  object-fit: contain;
+  touch-action: none;
+}
+
+.inline-text-editor {
+  background: rgba(17, 17, 19, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 6px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+  color: #f5f5f7;
+  font-size: 14px;
+  left: 0;
+  line-height: 1.2;
+  min-height: 30px;
+  min-width: 150px;
+  padding: 5px 8px;
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  z-index: 3;
 }
 
 .toolbar {

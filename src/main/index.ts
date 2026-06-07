@@ -24,6 +24,7 @@ import { displayContainingPoint } from '../shared/displays';
 import { expandHomeDirectory, screenshotFilePath } from '../shared/files';
 import { clampRectToBounds, toPhysicalRect } from '../shared/geometry';
 import {
+  type AnnotationImagePayload,
   type CaptureActionResponse,
   type CaptureMode,
   ipcChannels,
@@ -43,6 +44,7 @@ let shortcutStatus: ShortcutStatus = { region: 'not-registered' };
 let overlayWindows: BrowserWindow[] = [];
 let previewWindow: BrowserWindow | null = null;
 let sourcePickerWindow: BrowserWindow | null = null;
+let annotationWindow: BrowserWindow | null = null;
 let latestPreviewCapture: CaptureResult | null = null;
 let windowCaptureSources: Electron.DesktopCapturerSource[] = [];
 let activeRegionCapture: ((response: CaptureActionResponse) => void) | null = null;
@@ -213,6 +215,59 @@ function showSourcePickerWindow(): void {
 
 function closeSourcePickerWindow(): void {
   sourcePickerWindow?.close();
+}
+
+function showAnnotationWindow(): void {
+  if (!latestPreviewCapture) {
+    return;
+  }
+
+  if (annotationWindow) {
+    if (annotationWindow.isMinimized()) {
+      annotationWindow.restore();
+    }
+
+    annotationWindow.show();
+    annotationWindow.focus();
+    return;
+  }
+
+  annotationWindow = new BrowserWindow({
+    width: 1180,
+    height: 780,
+    minWidth: 760,
+    minHeight: 520,
+    title: `${appInfo.name} Annotate`,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  annotationWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+  annotationWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  annotationWindow.once('ready-to-show', () => {
+    annotationWindow?.show();
+  });
+
+  annotationWindow.on('closed', () => {
+    annotationWindow = null;
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void annotationWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/annotation.html`);
+  } else {
+    void annotationWindow.loadFile(join(__dirname, '../renderer/annotation.html'));
+  }
+}
+
+function closeAnnotationWindow(): void {
+  annotationWindow?.close();
 }
 
 function createTrayIcon(): NativeImage {
@@ -688,6 +743,60 @@ function copyLatestPreviewCapture(): void {
   clipboard.writeImage(nativeImage.createFromDataURL(latestPreviewCapture.image.dataUrl));
 }
 
+async function saveAnnotatedCapture(payload: AnnotationImagePayload): Promise<SaveCaptureResponse> {
+  if (!isValidAnnotationPayload(payload)) {
+    return {
+      status: 'failed',
+      message: 'Annotated image payload is invalid.',
+    };
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const saveFolder = expandHomeDirectory(settings.saveFolder, homedir());
+    const filePath = screenshotFilePath(settings.saveFolder, timestamp, homedir());
+    const image = nativeImage.createFromDataURL(payload.dataUrl);
+
+    await mkdir(saveFolder, { recursive: true });
+    await writeFile(filePath, image.toPNG());
+
+    return {
+      status: 'saved',
+      filePath,
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'Could not save annotated screenshot.',
+    };
+  }
+}
+
+function copyAnnotatedCapture(payload: AnnotationImagePayload): void {
+  if (!isValidAnnotationPayload(payload)) {
+    return;
+  }
+
+  clipboard.writeImage(nativeImage.createFromDataURL(payload.dataUrl));
+}
+
+function isValidAnnotationPayload(payload: unknown): payload is AnnotationImagePayload {
+  if (typeof payload !== 'object' || payload === null) {
+    return false;
+  }
+
+  const candidate = payload as Partial<AnnotationImagePayload>;
+
+  return (
+    typeof candidate.dataUrl === 'string' &&
+    candidate.dataUrl.startsWith('data:image/png') &&
+    typeof candidate.width === 'number' &&
+    candidate.width > 0 &&
+    typeof candidate.height === 'number' &&
+    candidate.height > 0
+  );
+}
+
 function applyDockVisibility(): void {
   if (settings.showDockIcon) {
     app.dock?.show();
@@ -871,6 +980,27 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(ipcChannels.sourcePickerCancel, () => {
     cancelWindowCapture();
+  });
+  ipcMain.handle(ipcChannels.annotationOpen, () => {
+    showAnnotationWindow();
+  });
+  ipcMain.handle(ipcChannels.annotationCopy, (_event, payload: unknown) => {
+    if (isValidAnnotationPayload(payload)) {
+      copyAnnotatedCapture(payload);
+    }
+  });
+  ipcMain.handle(ipcChannels.annotationSave, (_event, payload: unknown) => {
+    if (!isValidAnnotationPayload(payload)) {
+      return {
+        status: 'failed',
+        message: 'Annotated image payload is invalid.',
+      } satisfies SaveCaptureResponse;
+    }
+
+    return saveAnnotatedCapture(payload);
+  });
+  ipcMain.handle(ipcChannels.annotationClose, () => {
+    closeAnnotationWindow();
   });
 }
 

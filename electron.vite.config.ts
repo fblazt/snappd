@@ -33,6 +33,7 @@ export default defineConfig({
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
           preview: resolve(__dirname, 'src/renderer/preview.html'),
           sourcePicker: resolve(__dirname, 'src/renderer/source-picker.html'),
+          annotation: resolve(__dirname, 'src/renderer/annotation.html'),
         },
       },
     },
