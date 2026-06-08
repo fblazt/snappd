@@ -121,6 +121,30 @@ button.active {
   width: 96px;
 }
 
+.zoom-control {
+  align-items: center;
+  color: rgba(235, 235, 245, 0.72);
+  display: flex;
+  font-size: 12px;
+  gap: 7px;
+}
+
+.zoom-control button {
+  align-items: center;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  line-height: 1;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+}
+
+.zoom-control span {
+  min-width: 44px;
+  text-align: center;
+}
+
 .image-panel {
   align-items: center;
   background: #111113;

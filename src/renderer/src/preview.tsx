@@ -12,6 +12,7 @@ interface Point {
 
 type BoxHandle = 'nw' | 'ne' | 'sw' | 'se';
 type ResizeHandle = 'start' | 'end' | BoxHandle;
+type SelectionHandle = ResizeHandle | 'rotate';
 
 type ShapeAnnotation = {
   id: string;
@@ -20,6 +21,7 @@ type ShapeAnnotation = {
   end: Point;
   color: string;
   strokeWidth: number;
+  rotation: number;
 };
 
 type TextAnnotation = {
@@ -30,6 +32,7 @@ type TextAnnotation = {
   color: string;
   fontSize: number;
   strokeWidth: number;
+  rotation: number;
 };
 
 type PenAnnotation = {
@@ -38,6 +41,7 @@ type PenAnnotation = {
   points: Point[];
   color: string;
   strokeWidth: number;
+  rotation: number;
 };
 
 type Annotation = ShapeAnnotation | TextAnnotation | PenAnnotation;
@@ -56,10 +60,19 @@ type Interaction =
       handle: ResizeHandle;
       startPoint: Point;
       original: Annotation;
+    }
+  | {
+      kind: 'rotate';
+      id: string;
+      original: Annotation;
     };
 
 const colors = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ffffff', '#000000'];
-const handleSize = 8;
+const handleSize = 12;
+const rotateHandleSize = 30;
+const minZoom = 0.25;
+const maxZoom = 4;
+const zoomStep = 0.25;
 
 function Preview() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -73,6 +86,8 @@ function Preview() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [draftAnnotation, setDraftAnnotation] = useState<Annotation | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [textEditor, setTextEditor] = useState<{
     id: string | null;
     imagePoint: Point;
@@ -108,8 +123,7 @@ function Preview() {
       imageRef.current = image;
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
-      canvas.style.width = `${size.width}px`;
-      canvas.style.height = `${size.height}px`;
+      setDisplaySize(size);
       renderCanvas(canvas, image, annotations, draftAnnotation, selectedId);
     };
     image.src = capture.image.dataUrl;
@@ -125,6 +139,35 @@ function Preview() {
 
     renderCanvas(canvas, image, annotations, draftAnnotation, selectedId);
   }, [annotations, draftAnnotation, selectedId]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas || !displaySize) {
+      return;
+    }
+
+    canvas.style.width = `${displaySize.width * zoom}px`;
+    canvas.style.height = `${displaySize.height * zoom}px`;
+  }, [displaySize, zoom]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas || !textEditor) {
+      return;
+    }
+
+    const scale = canvas.clientWidth / canvas.width;
+    setTextEditor((current) =>
+      current
+        ? {
+            ...current,
+            displayPoint: toDisplayPoint(current.imagePoint, scale),
+          }
+        : null,
+    );
+  }, [zoom, displaySize?.width, displaySize?.height, textEditor?.imagePoint.x, textEditor?.imagePoint.y]);
 
   useLayoutEffect(() => {
     if (!textEditor) {
@@ -235,6 +278,36 @@ function Preview() {
                 }}
               />
             </label>
+
+            <div className="zoom-control" aria-label="Preview zoom controls">
+              <button
+                type="button"
+                onClick={() => setZoom((current) => Math.max(minZoom, current - zoomStep))}
+                disabled={zoom <= minZoom}
+                title="Zoom out"
+                aria-label="Zoom out"
+              >
+                −
+              </button>
+              <span>{Math.round(zoom * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => setZoom((current) => Math.min(maxZoom, current + zoomStep))}
+                disabled={zoom >= maxZoom}
+                title="Zoom in"
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoom(1)}
+                disabled={zoom === 1}
+                title="Reset zoom"
+              >
+                Reset
+              </button>
+            </div>
           </header>
 
           <section className="image-panel">
@@ -273,16 +346,23 @@ function Preview() {
                     : null;
 
                   if (handleHit) {
+                    const selected = annotations.find((annotation) => annotation.id === selectedId) as Annotation;
+
                     event.preventDefault();
-                    interactionRef.current = {
-                      kind: 'resize',
-                      id: selectedId as string,
-                      handle: handleHit,
-                      startPoint: imagePoint,
-                      original: cloneAnnotation(
-                        annotations.find((annotation) => annotation.id === selectedId) as Annotation,
-                      ),
-                    };
+                    interactionRef.current =
+                      handleHit === 'rotate'
+                        ? {
+                            kind: 'rotate',
+                            id: selectedId as string,
+                            original: cloneAnnotation(selected),
+                          }
+                        : {
+                            kind: 'resize',
+                            id: selectedId as string,
+                            handle: handleHit,
+                            startPoint: imagePoint,
+                            original: cloneAnnotation(selected),
+                          };
                     canvas.setPointerCapture(event.pointerId);
                     return;
                   }
@@ -359,10 +439,21 @@ function Preview() {
                     return;
                   }
 
+                  if (interaction.kind === 'resize') {
+                    setAnnotations((current) =>
+                      current.map((annotation) =>
+                        annotation.id === interaction.id
+                          ? resizeAnnotation(interaction.original, interaction.handle, imagePoint)
+                          : annotation,
+                      ),
+                    );
+                    return;
+                  }
+
                   setAnnotations((current) =>
                     current.map((annotation) =>
                       annotation.id === interaction.id
-                        ? resizeAnnotation(interaction.original, interaction.handle, imagePoint)
+                        ? rotateAnnotation(interaction.original, imagePoint)
                         : annotation,
                     ),
                   );
@@ -502,6 +593,7 @@ function commitText(
     color,
     strokeWidth,
     fontSize: Math.max(18, strokeWidth * 5),
+    rotation: 0,
   };
 
   setAnnotations((current) => [...current, annotation]);
@@ -547,6 +639,7 @@ function createAnnotation(
       points: [point],
       color,
       strokeWidth,
+      rotation: 0,
     };
   }
 
@@ -557,6 +650,7 @@ function createAnnotation(
     end: point,
     color,
     strokeWidth,
+    rotation: 0,
   };
 }
 
@@ -611,17 +705,23 @@ function renderCanvas(
 }
 
 function drawAnnotation(context: CanvasRenderingContext2D, annotation: Annotation): void {
+  context.save();
+  rotateContext(context, annotation);
+
   if (annotation.tool === 'text') {
     drawText(context, annotation.point, annotation.text, annotation.color, annotation.fontSize);
+    context.restore();
     return;
   }
 
   if (annotation.tool === 'pen') {
     drawPenPath(context, annotation.points, annotation.color, annotation.strokeWidth);
+    context.restore();
     return;
   }
 
   drawShape(context, annotation.tool, annotation.start, annotation.end, annotation.color, annotation.strokeWidth);
+  context.restore();
 }
 
 function drawShape(
@@ -656,25 +756,35 @@ function drawArrow(
 ): void {
   const angle = Math.atan2(end.y - start.y, end.x - start.x);
   const headLength = Math.max(18, strokeWidth * 4);
+  const headWidth = Math.max(12, strokeWidth * 3);
+  const shaftEnd = {
+    x: end.x - Math.cos(angle) * headLength * 0.72,
+    y: end.y - Math.sin(angle) * headLength * 0.72,
+  };
+  const perpendicular = angle + Math.PI / 2;
+  const leftBase = {
+    x: shaftEnd.x + Math.cos(perpendicular) * headWidth * 0.5,
+    y: shaftEnd.y + Math.sin(perpendicular) * headWidth * 0.5,
+  };
+  const rightBase = {
+    x: shaftEnd.x - Math.cos(perpendicular) * headWidth * 0.5,
+    y: shaftEnd.y - Math.sin(perpendicular) * headWidth * 0.5,
+  };
 
   context.strokeStyle = color;
   context.fillStyle = color;
   context.lineWidth = strokeWidth;
   context.lineCap = 'round';
+  context.lineJoin = 'round';
   context.beginPath();
   context.moveTo(start.x, start.y);
-  context.lineTo(end.x, end.y);
+  context.lineTo(shaftEnd.x, shaftEnd.y);
   context.stroke();
+
   context.beginPath();
   context.moveTo(end.x, end.y);
-  context.lineTo(
-    end.x - headLength * Math.cos(angle - Math.PI / 6),
-    end.y - headLength * Math.sin(angle - Math.PI / 6),
-  );
-  context.lineTo(
-    end.x - headLength * Math.cos(angle + Math.PI / 6),
-    end.y - headLength * Math.sin(angle + Math.PI / 6),
-  );
+  context.lineTo(leftBase.x, leftBase.y);
+  context.lineTo(rightBase.x, rightBase.y);
   context.closePath();
   context.fill();
 }
@@ -738,41 +848,96 @@ function pixelate(context: CanvasRenderingContext2D, start: Point, end: Point): 
 
 function drawSelection(context: CanvasRenderingContext2D, annotation: Annotation): void {
   const box = annotationBox(annotation, context);
+  const center = annotationCenter(annotation, context);
+
   context.save();
+  context.translate(center.x, center.y);
+  context.rotate(annotation.rotation);
+  context.translate(-center.x, -center.y);
   context.strokeStyle = '#0a84ff';
   context.lineWidth = 1;
   context.setLineDash([6, 4]);
   context.strokeRect(box.x, box.y, box.width, box.height);
   context.setLineDash([]);
 
+  const topCenter = { x: box.x + box.width / 2, y: box.y };
+  context.beginPath();
+  context.moveTo(topCenter.x, topCenter.y);
+  context.lineTo(topCenter.x, topCenter.y - 36);
+  context.stroke();
+  context.restore();
+
   for (const handle of selectionHandles(annotation, context)) {
-    context.fillStyle = '#0a84ff';
-    context.strokeStyle = '#ffffff';
-    context.lineWidth = 2;
-    context.fillRect(handle.point.x - handleSize / 2, handle.point.y - handleSize / 2, handleSize, handleSize);
-    context.strokeRect(handle.point.x - handleSize / 2, handle.point.y - handleSize / 2, handleSize, handleSize);
+    context.save();
+    context.translate(handle.point.x, handle.point.y);
+    context.rotate(annotation.rotation);
+    if (handle.handle === 'rotate') {
+      drawRotateHandle(context);
+    } else {
+      drawResizeHandle(context);
+    }
+    context.restore();
   }
+}
+
+function drawResizeHandle(context: CanvasRenderingContext2D): void {
+  context.fillStyle = '#0a84ff';
+  context.strokeStyle = '#ffffff';
+  context.lineWidth = 2;
+  context.fillRect(-handleSize / 2, -handleSize / 2, handleSize, handleSize);
+  context.strokeRect(-handleSize / 2, -handleSize / 2, handleSize, handleSize);
+}
+
+function drawRotateHandle(context: CanvasRenderingContext2D): void {
+  const radius = rotateHandleSize / 2;
+
+  context.fillStyle = '#ffffff';
+  context.strokeStyle = '#ff9500';
+  context.lineWidth = 2;
+  context.beginPath();
+  context.arc(0, 0, radius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+
+  context.save();
+  context.strokeStyle = '#ff9500';
+  context.lineWidth = 2.5;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.scale(0.78, 0.78);
+  context.translate(-12, -12);
+  context.stroke(new Path2D('M21 2v6h-6'));
+  context.stroke(new Path2D('M3 12a9 9 0 0 1 15-6.7L21 8'));
+  context.stroke(new Path2D('M3 22v-6h6'));
+  context.stroke(new Path2D('M21 12a9 9 0 0 1-15 6.7L3 16'));
   context.restore();
 }
 
 function selectionHandles(
   annotation: Annotation,
   context: CanvasRenderingContext2D | null,
-): Array<{ handle: ResizeHandle; point: Point }> {
-  if (annotation.tool === 'arrow') {
-    return [
-      { handle: 'start', point: annotation.start },
-      { handle: 'end', point: annotation.end },
-    ];
-  }
-
+): Array<{ handle: SelectionHandle; point: Point }> {
+  const center = annotationCenter(annotation, context);
   const box = annotationBox(annotation, context);
-  return [
-    { handle: 'nw', point: { x: box.x, y: box.y } },
-    { handle: 'ne', point: { x: box.x + box.width, y: box.y } },
-    { handle: 'sw', point: { x: box.x, y: box.y + box.height } },
-    { handle: 'se', point: { x: box.x + box.width, y: box.y + box.height } },
-  ];
+  const localHandles: Array<{ handle: SelectionHandle; point: Point }> =
+    annotation.tool === 'arrow'
+      ? [
+          { handle: 'start', point: annotation.start },
+          { handle: 'end', point: annotation.end },
+        ]
+      : [
+          { handle: 'nw', point: { x: box.x, y: box.y } },
+          { handle: 'ne', point: { x: box.x + box.width, y: box.y } },
+          { handle: 'sw', point: { x: box.x, y: box.y + box.height } },
+          { handle: 'se', point: { x: box.x + box.width, y: box.y + box.height } },
+        ];
+
+  localHandles.push({ handle: 'rotate', point: { x: box.x + box.width / 2, y: box.y - 36 } });
+
+  return localHandles.map((handle) => ({
+    ...handle,
+    point: rotatePoint(handle.point, center, annotation.rotation),
+  }));
 }
 
 function hitTestHandle(
@@ -781,15 +946,18 @@ function hitTestHandle(
   selectedId: string,
   point: Point,
   scale: number,
-): ResizeHandle | null {
+): SelectionHandle | null {
   const selected = annotations.find((annotation) => annotation.id === selectedId);
 
   if (!selected) {
     return null;
   }
 
-  const tolerance = Math.max(handleSize / scale, 6);
   for (const handle of selectionHandles(selected, context)) {
+    const tolerance = handle.handle === 'rotate'
+      ? Math.max(rotateHandleSize / scale / 2, 10)
+      : Math.max(handleSize / scale, 6);
+
     if (distance(point, handle.point) <= tolerance) {
       return handle.handle;
     }
@@ -809,8 +977,10 @@ function hitTestAnnotation(
   for (let annotationIndex = annotations.length - 1; annotationIndex >= 0; annotationIndex -= 1) {
     const annotation = annotations[annotationIndex];
 
+    const localPoint = rotatePoint(point, annotationCenter(annotation, context), -annotation.rotation);
+
     if (annotation.tool === 'arrow') {
-      if (distanceToSegment(point, annotation.start, annotation.end) <= tolerance + annotation.strokeWidth / 2) {
+      if (distanceToSegment(localPoint, annotation.start, annotation.end) <= tolerance + annotation.strokeWidth / 2) {
         return annotation;
       }
       continue;
@@ -819,7 +989,7 @@ function hitTestAnnotation(
     if (annotation.tool === 'pen') {
       for (let index = 1; index < annotation.points.length; index += 1) {
         if (
-          distanceToSegment(point, annotation.points[index - 1], annotation.points[index]) <=
+          distanceToSegment(localPoint, annotation.points[index - 1], annotation.points[index]) <=
           tolerance + annotation.strokeWidth / 2
         ) {
           return annotation;
@@ -830,10 +1000,10 @@ function hitTestAnnotation(
 
     const box = annotationBox(annotation, context);
     if (
-      point.x >= box.x - tolerance &&
-      point.x <= box.x + box.width + tolerance &&
-      point.y >= box.y - tolerance &&
-      point.y <= box.y + box.height + tolerance
+      localPoint.x >= box.x - tolerance &&
+      localPoint.x <= box.x + box.width + tolerance &&
+      localPoint.y >= box.y - tolerance &&
+      localPoint.y <= box.y + box.height + tolerance
     ) {
       return annotation;
     }
@@ -862,6 +1032,26 @@ function annotationBox(annotation: Annotation, context: CanvasRenderingContext2D
   return new DOMRect(x, y, Math.abs(annotation.end.x - annotation.start.x), Math.abs(annotation.end.y - annotation.start.y));
 }
 
+function annotationCenter(annotation: Annotation, context: CanvasRenderingContext2D | null): Point {
+  const box = annotationBox(annotation, context);
+
+  return {
+    x: box.x + box.width / 2,
+    y: box.y + box.height / 2,
+  };
+}
+
+function rotateContext(context: CanvasRenderingContext2D, annotation: Annotation): void {
+  if (annotation.rotation === 0) {
+    return;
+  }
+
+  const center = annotationCenter(annotation, context);
+  context.translate(center.x, center.y);
+  context.rotate(annotation.rotation);
+  context.translate(-center.x, -center.y);
+}
+
 function moveAnnotation(annotation: Annotation, delta: Point): Annotation {
   if (annotation.tool === 'text') {
     return { ...annotation, point: addPoint(annotation.point, delta) };
@@ -879,15 +1069,17 @@ function moveAnnotation(annotation: Annotation, delta: Point): Annotation {
 }
 
 function resizeAnnotation(annotation: Annotation, handle: ResizeHandle, point: Point): Annotation {
+  const localPoint = rotatePoint(point, annotationCenter(annotation, null), -annotation.rotation);
+
   if (annotation.tool === 'arrow') {
     if (handle === 'start') {
-      return { ...annotation, start: point };
+      return { ...annotation, start: localPoint };
     }
-    return { ...annotation, end: point };
+    return { ...annotation, end: localPoint };
   }
 
   const box = annotationBox(annotation, null);
-  const nextBox = resizeBox(box, handle as BoxHandle, point);
+  const nextBox = resizeBox(box, handle as BoxHandle, localPoint);
 
   if (annotation.tool === 'text') {
     const nextFontSize = Math.max(8, nextBox.height);
@@ -910,6 +1102,13 @@ function resizeAnnotation(annotation: Annotation, handle: ResizeHandle, point: P
     start: { x: nextBox.x, y: nextBox.y },
     end: { x: nextBox.x + nextBox.width, y: nextBox.y + nextBox.height },
   };
+}
+
+function rotateAnnotation(annotation: Annotation, point: Point): Annotation {
+  const center = annotationCenter(annotation, null);
+  const angle = Math.atan2(point.y - center.y, point.x - center.x) + Math.PI / 2;
+
+  return { ...annotation, rotation: angle };
 }
 
 function resizeBox(box: DOMRect, handle: BoxHandle, point: Point): DOMRect {
@@ -956,6 +1155,18 @@ function addPoint(point: Point, delta: Point): Point {
   return {
     x: point.x + delta.x,
     y: point.y + delta.y,
+  };
+}
+
+function rotatePoint(point: Point, center: Point, rotation: number): Point {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const x = point.x - center.x;
+  const y = point.y - center.y;
+
+  return {
+    x: center.x + x * cos - y * sin,
+    y: center.y + x * sin + y * cos,
   };
 }
 
