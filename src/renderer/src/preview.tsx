@@ -76,6 +76,7 @@ const zoomStep = 0.25;
 
 function Preview() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imagePanelRef = useRef<HTMLElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const textInputRef = useRef<HTMLInputElement | null>(null);
   const interactionRef = useRef<Interaction | null>(null);
@@ -195,6 +196,44 @@ function Preview() {
     setStrokeWidth(annotation.strokeWidth);
   };
 
+  const handlePreviewWheel = (event: React.WheelEvent<HTMLElement>) => {
+    if (!event.ctrlKey) {
+      return;
+    }
+
+    const panel = imagePanelRef.current;
+
+    if (!panel) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const bounds = panel.getBoundingClientRect();
+    const pointerX = event.clientX - bounds.left;
+    const pointerY = event.clientY - bounds.top;
+    const contentX = panel.scrollLeft + pointerX;
+    const contentY = panel.scrollTop + pointerY;
+    let previousZoom = zoom;
+    let nextZoom = zoom;
+
+    setZoom((current) => {
+      previousZoom = current;
+      nextZoom = clampZoom(current * Math.exp(-event.deltaY * 0.005));
+      return nextZoom;
+    });
+
+    window.requestAnimationFrame(() => {
+      if (nextZoom === previousZoom) {
+        return;
+      }
+
+      const ratio = nextZoom / previousZoom;
+      panel.scrollLeft = contentX * ratio - pointerX;
+      panel.scrollTop = contentY * ratio - pointerY;
+    });
+  };
+
   const exportPayload = () => {
     const canvas = canvasRef.current;
     const image = imageRef.current;
@@ -282,7 +321,7 @@ function Preview() {
             <div className="zoom-control" aria-label="Preview zoom controls">
               <button
                 type="button"
-                onClick={() => setZoom((current) => Math.max(minZoom, current - zoomStep))}
+                onClick={() => setZoom((current) => clampZoom(current - zoomStep))}
                 disabled={zoom <= minZoom}
                 title="Zoom out"
                 aria-label="Zoom out"
@@ -292,7 +331,7 @@ function Preview() {
               <span>{Math.round(zoom * 100)}%</span>
               <button
                 type="button"
-                onClick={() => setZoom((current) => Math.min(maxZoom, current + zoomStep))}
+                onClick={() => setZoom((current) => clampZoom(current + zoomStep))}
                 disabled={zoom >= maxZoom}
                 title="Zoom in"
                 aria-label="Zoom in"
@@ -310,7 +349,7 @@ function Preview() {
             </div>
           </header>
 
-          <section className="image-panel">
+          <section className="image-panel" ref={imagePanelRef} onWheel={handlePreviewWheel}>
             <div className="canvas-wrap">
               <canvas
                 ref={canvasRef}
@@ -605,6 +644,10 @@ function previewCanvasMaxSize(): { width: number; height: number } {
     width: Math.max(320, window.innerWidth - 96),
     height: Math.max(220, window.innerHeight - 210),
   };
+}
+
+function clampZoom(value: number): number {
+  return Math.min(maxZoom, Math.max(minZoom, value));
 }
 
 function eventPoint(
