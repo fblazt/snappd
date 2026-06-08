@@ -29,14 +29,14 @@ label {
 .preferences-window {
   background: #f5f5f7;
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 232px 1fr;
   min-height: 100vh;
 }
 
 .preferences-sidebar {
-  background: rgba(230, 230, 234, 0.82);
-  border-right: 1px solid rgba(0, 0, 0, 0.12);
-  padding: 28px 14px;
+  background: rgba(236, 236, 240, 0.78);
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 30px 16px;
 }
 
 .app-badge {
@@ -44,16 +44,16 @@ label {
   background: linear-gradient(180deg, #ffb06b, #f26f21);
   border-radius: 14px;
   box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.38),
-    0 8px 18px rgba(242, 111, 33, 0.22);
+    inset 0 1px rgba(255, 255, 255, 0.42),
+    0 10px 24px rgba(242, 111, 33, 0.18);
   color: #fff;
   display: flex;
   font-size: 20px;
   font-weight: 700;
-  height: 48px;
+  height: 50px;
   justify-content: center;
-  margin: 0 auto 24px;
-  width: 48px;
+  margin: 0 auto 22px;
+  width: 50px;
 }
 
 nav {
@@ -65,18 +65,22 @@ nav {
   appearance: none;
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   color: #343437;
   cursor: default;
+  display: block;
   font-size: 13px;
   font-weight: 500;
-  padding: 7px 10px;
+  min-height: 30px;
+  padding: 6px 10px;
   text-align: left;
+  width: 100%;
 }
 
 .sidebar-item.active {
   background: rgba(0, 0, 0, 0.1);
   color: #111113;
+  font-weight: 600;
 }
 
 .sidebar-item:disabled {
@@ -84,9 +88,9 @@ nav {
 }
 
 .preferences-content {
-  margin: 0 auto;
-  max-width: 720px;
-  padding: 44px 44px 64px;
+  margin: 0;
+  max-width: 760px;
+  padding: 48px 56px 64px;
   width: 100%;
 }
 
@@ -96,8 +100,9 @@ nav {
 
 h1 {
   color: #1d1d1f;
-  font-size: 30px;
-  letter-spacing: -0.03em;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
   line-height: 1.1;
   margin: 0 0 6px;
 }
@@ -126,10 +131,12 @@ p {
 }
 
 .settings-card {
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.075);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.72),
+    0 1px 1px rgba(0, 0, 0, 0.03);
   overflow: hidden;
 }
 
@@ -142,14 +149,14 @@ p {
 .settings-row {
   align-items: center;
   display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(170px, 0.55fr) minmax(0, 1fr);
-  min-height: 44px;
-  padding: 10px 14px;
+  gap: 18px;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, auto);
+  min-height: 46px;
+  padding: 9px 14px 9px 16px;
 }
 
 .settings-row + .settings-row {
-  border-top: 1px solid rgba(60, 60, 67, 0.16);
+  border-top: 1px solid rgba(60, 60, 67, 0.14);
 }
 
 .settings-row.stacked {
@@ -189,9 +196,10 @@ code {
 
 button {
   appearance: none;
-  background: #fff;
-  border: 1px solid rgba(60, 60, 67, 0.22);
+  background: linear-gradient(180deg, #fff, #f6f6f8);
+  border: 1px solid rgba(60, 60, 67, 0.2);
   border-radius: 7px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.8);
   color: #1d1d1f;
   cursor: default;
   font-size: 13px;
@@ -202,11 +210,48 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #f5f5f7;
+  background: linear-gradient(180deg, #fff, #eeeeF1);
 }
 
 input[type="checkbox"] {
+  appearance: none;
+  background: rgba(120, 120, 128, 0.24);
+  border: 0;
+  border-radius: 999px;
+  height: 22px;
   justify-self: end;
+  margin: 0;
+  padding: 2px;
+  position: relative;
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+  width: 38px;
+}
+
+input[type="checkbox"]::before {
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.26);
+  content: "";
+  display: block;
+  height: 18px;
+  transform: translateX(0);
+  transition: transform 160ms ease;
+  width: 18px;
+}
+
+input[type="checkbox"]:checked {
+  background: #0a84ff;
+}
+
+input[type="checkbox"]:checked::before {
+  transform: translateX(16px);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 3px solid rgba(10, 132, 255, 0.28);
+  outline-offset: 2px;
 }
 
 .text-input {
@@ -289,8 +334,8 @@ input[type="checkbox"] {
   }
 
   .preferences-sidebar {
-    background: rgba(44, 44, 46, 0.82);
-    border-right-color: rgba(255, 255, 255, 0.12);
+    background: rgba(44, 44, 46, 0.72);
+    border-right-color: rgba(255, 255, 255, 0.1);
   }
 
   .sidebar-item {
@@ -298,7 +343,7 @@ input[type="checkbox"] {
   }
 
   .sidebar-item.active {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.14);
     color: #f5f5f7;
   }
 
@@ -314,8 +359,11 @@ input[type="checkbox"] {
   }
 
   .settings-card {
-    background: rgba(44, 44, 46, 0.86);
-    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(44, 44, 46, 0.88);
+    border-color: rgba(255, 255, 255, 0.095);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.06),
+      0 1px 1px rgba(0, 0, 0, 0.18);
   }
 
   .settings-row + .settings-row {
@@ -328,13 +376,14 @@ input[type="checkbox"] {
   }
 
   button {
-    background: rgba(255, 255, 255, 0.1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08));
     border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
     color: #f5f5f7;
   }
 
   button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.14);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.1));
   }
 
   .text-input {
