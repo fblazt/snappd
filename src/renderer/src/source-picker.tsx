@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import type { SourcePickerItem } from '../../shared/ipc';
 import './source-picker.css';
 
-function SourcePicker() {
+export function SourcePicker() {
   const [sources, setSources] = useState<SourcePickerItem[]>([]);
 
   useEffect(() => {

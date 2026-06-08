@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useRef, useState } from 'react';
+import { StrictMode, useEffect, useReducer, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AnnotationTool } from '../../shared/annotations';
 import { scaledCanvasSize, toImagePoint } from '../../shared/annotations';
@@ -12,19 +12,40 @@ interface Point {
 
 const colors = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ffffff', '#000000'];
 
-function AnnotationEditor() {
+interface AnnotationEditorState {
+  capture: CaptureResult | null;
+  tool: AnnotationTool;
+  color: string;
+  strokeWidth: number;
+  status: string;
+}
+
+const initialAnnotationEditorState: AnnotationEditorState = {
+  capture: null,
+  tool: 'arrow',
+  color: colors[0],
+  strokeWidth: 6,
+  status: '',
+};
+
+export function AnnotationEditor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const startPointRef = useRef<Point | null>(null);
   const snapshotRef = useRef<ImageData | null>(null);
-  const [capture, setCapture] = useState<CaptureResult | null>(null);
-  const [tool, setTool] = useState<AnnotationTool>('arrow');
-  const [color, setColor] = useState(colors[0]);
-  const [strokeWidth, setStrokeWidth] = useState(6);
-  const [status, setStatus] = useState('');
+  const [state, setState] = useReducer(
+    (current: AnnotationEditorState, next: Partial<AnnotationEditorState>) => ({
+      ...current,
+      ...next,
+    }),
+    initialAnnotationEditorState,
+  );
+  const { capture, tool, color, strokeWidth, status } = state;
 
   useEffect(() => {
-    void window.snappd.getPreviewCapture().then((response) => setCapture(response.capture));
+    void window.snappd
+      .getPreviewCapture()
+      .then((response) => setState({ capture: response.capture }));
   }, []);
 
   useEffect(() => {
@@ -84,7 +105,7 @@ function AnnotationEditor() {
               type="button"
               className={tool === nextTool ? 'icon-button active' : 'icon-button'}
               key={nextTool}
-              onClick={() => setTool(nextTool)}
+              onClick={() => setState({ tool: nextTool })}
               title={toolTooltip(nextTool)}
               aria-label={toolTooltip(nextTool)}
             >
@@ -102,7 +123,7 @@ function AnnotationEditor() {
               className={color === nextColor ? 'active swatch' : 'swatch'}
               key={nextColor}
               style={{ background: nextColor }}
-              onClick={() => setColor(nextColor)}
+              onClick={() => setState({ color: nextColor })}
               title={`Use ${nextColor}`}
               aria-label={`Use ${nextColor}`}
             />
@@ -116,7 +137,7 @@ function AnnotationEditor() {
             min="2"
             max="24"
             value={strokeWidth}
-            onChange={(event) => setStrokeWidth(Number(event.currentTarget.value))}
+            onChange={(event) => setState({ strokeWidth: Number(event.currentTarget.value) })}
           />
         </label>
 
@@ -129,7 +150,9 @@ function AnnotationEditor() {
             onClick={() => {
               const payload = exportPayload();
               if (payload) {
-                void window.snappd.copyAnnotatedCapture(payload).then(() => setStatus('Copied'));
+                void window.snappd
+                  .copyAnnotatedCapture(payload)
+                  .then(() => setState({ status: 'Copied' }));
               }
             }}
           >
@@ -142,11 +165,12 @@ function AnnotationEditor() {
               const payload = exportPayload();
               if (payload) {
                 void window.snappd.saveAnnotatedCapture(payload).then((response) => {
-                  setStatus(
-                    response.status === 'saved'
-                      ? `Saved to ${response.filePath}`
-                      : response.message,
-                  );
+                  setState({
+                    status:
+                      response.status === 'saved'
+                        ? `Saved to ${response.filePath}`
+                        : response.message,
+                  });
                 });
               }
             }}
@@ -372,7 +396,7 @@ function toolTooltip(tool: AnnotationTool): string {
   return labels[tool];
 }
 
-function ToolIcon({ tool }: { tool: AnnotationTool }) {
+export function ToolIcon({ tool }: { tool: AnnotationTool }) {
   if (tool === 'arrow') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">

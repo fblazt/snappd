@@ -12,10 +12,10 @@ const shortcutModifiers = new Set([
 ]);
 
 export function isValidShortcut(shortcut: string): boolean {
-  const parts = shortcut
-    .split('+')
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const parts = shortcut.split('+').flatMap((part) => {
+    const trimmedPart = part.trim();
+    return trimmedPart ? [trimmedPart] : [];
+  });
   const hasModifier = parts.some((part) => shortcutModifiers.has(part));
   const key = parts.at(-1);
 

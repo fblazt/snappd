@@ -210,7 +210,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: linear-gradient(180deg, #fff, #eeeeF1);
+  background: linear-gradient(180deg, #fff, #eeeef1);
 }
 
 input[type="checkbox"] {

@@ -8,7 +8,7 @@ interface Point {
   y: number;
 }
 
-function Overlay() {
+export function Overlay() {
   const displayId = useMemo(
     () => Number(new URLSearchParams(window.location.search).get('displayId')),
     [],
@@ -33,8 +33,10 @@ function Overlay() {
   const selectionRect = startPoint && currentPoint ? getRect(startPoint, currentPoint) : null;
 
   return (
-    <main
+    <button
+      type="button"
       className="selection-overlay"
+      aria-label="Region selection overlay"
       onMouseDown={(event) => {
         const point = { x: event.clientX, y: event.clientY };
         setStartPoint(point);
@@ -57,7 +59,7 @@ function Overlay() {
     >
       <div className="overlay-hint">Drag to capture · Esc to cancel</div>
       {selectionRect ? <div className="selection-box" style={toStyle(selectionRect)} /> : null}
-    </main>
+    </button>
   );
 }
 

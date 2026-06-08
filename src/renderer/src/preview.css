@@ -123,10 +123,13 @@ button.active {
 
 .zoom-control {
   align-items: center;
+  border: 0;
   color: rgba(235, 235, 245, 0.72);
   display: flex;
   font-size: 12px;
   gap: 7px;
+  margin: 0;
+  padding: 0;
 }
 
 .zoom-control button {

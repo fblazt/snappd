@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { StrictMode, useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AnnotationTool } from '../../shared/annotations';
 import { scaledCanvasSize, toImagePoint } from '../../shared/annotations';
@@ -67,6 +67,43 @@ type Interaction =
       original: Annotation;
     };
 
+type TextEditor = {
+  id: string | null;
+  imagePoint: Point;
+  displayPoint: Point;
+  value: string;
+};
+
+interface PreviewState {
+  capture: CaptureResult | null;
+  tool: AnnotationTool;
+  color: string;
+  strokeWidth: number;
+  annotations: Annotation[];
+  draftAnnotation: Annotation | null;
+  selectedId: string | null;
+  displaySize: { width: number; height: number } | null;
+  zoom: number;
+  textEditor: TextEditor | null;
+  status: string;
+}
+
+type PreviewAction = Partial<PreviewState> | ((current: PreviewState) => Partial<PreviewState>);
+
+const initialPreviewState: PreviewState = {
+  capture: null,
+  tool: 'arrow',
+  color: '#ff3b30',
+  strokeWidth: 6,
+  annotations: [],
+  draftAnnotation: null,
+  selectedId: null,
+  displaySize: null,
+  zoom: 1,
+  textEditor: null,
+  status: '',
+};
+
 const colors = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ffffff', '#000000'];
 const handleSize = 12;
 const rotateHandleSize = 30;
@@ -74,32 +111,37 @@ const minZoom = 0.25;
 const maxZoom = 4;
 const zoomStep = 0.25;
 
-function Preview() {
+export function Preview() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imagePanelRef = useRef<HTMLElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const textInputRef = useRef<HTMLInputElement | null>(null);
   const interactionRef = useRef<Interaction | null>(null);
-  const [capture, setCapture] = useState<CaptureResult | null>(null);
-  const [tool, setTool] = useState<AnnotationTool>('arrow');
-  const [color, setColor] = useState(colors[0]);
-  const [strokeWidth, setStrokeWidth] = useState(6);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [draftAnnotation, setDraftAnnotation] = useState<Annotation | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [textEditor, setTextEditor] = useState<{
-    id: string | null;
-    imagePoint: Point;
-    displayPoint: Point;
-    value: string;
-  } | null>(null);
-  const [status, setStatus] = useState<string>('');
+  const [state, setState] = useReducer((current: PreviewState, action: PreviewAction) => {
+    const next = typeof action === 'function' ? action(current) : action;
+    return { ...current, ...next };
+  }, initialPreviewState);
+  const {
+    capture,
+    tool,
+    color,
+    strokeWidth,
+    annotations,
+    draftAnnotation,
+    selectedId,
+    displaySize,
+    zoom,
+    textEditor,
+    status,
+  } = state;
+  const setAnnotations = (updater: (current: Annotation[]) => Annotation[]) => {
+    setState((current) => ({ annotations: updater(current.annotations) }));
+  };
+  const setSelectedId = (updater: string | null) => setState({ selectedId: updater });
 
   useEffect(() => {
     void window.snappd.getPreviewCapture().then((response) => {
-      setCapture(response.capture);
+      setState({ capture: response.capture });
     });
   }, []);
 
@@ -124,8 +166,8 @@ function Preview() {
       imageRef.current = image;
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
-      setDisplaySize(size);
-      renderCanvas(canvas, image, annotations, draftAnnotation, selectedId);
+      setState({ displaySize: size });
+      renderCanvas(canvas, image, [], null, null);
     };
     image.src = capture.image.dataUrl;
   }, [capture]);
@@ -160,15 +202,24 @@ function Preview() {
     }
 
     const scale = canvas.clientWidth / canvas.width;
-    setTextEditor((current) =>
-      current
+    const displayPoint = toDisplayPoint(textEditor.imagePoint, scale);
+
+    if (
+      displayPoint.x === textEditor.displayPoint.x &&
+      displayPoint.y === textEditor.displayPoint.y
+    ) {
+      return;
+    }
+
+    setState((current) => ({
+      textEditor: current.textEditor
         ? {
-            ...current,
-            displayPoint: toDisplayPoint(current.imagePoint, scale),
+            ...current.textEditor,
+            displayPoint,
           }
         : null,
-    );
-  }, [zoom, displaySize?.width, displaySize?.height, textEditor?.imagePoint.x, textEditor?.imagePoint.y]);
+    }));
+  }, [zoom, displaySize?.width, displaySize?.height, textEditor]);
 
   useLayoutEffect(() => {
     if (!textEditor) {
@@ -177,7 +228,7 @@ function Preview() {
 
     textInputRef.current?.focus();
     textInputRef.current?.select();
-  }, [textEditor?.displayPoint.x, textEditor?.displayPoint.y]);
+  }, [textEditor]);
 
   const updateAnnotation = (id: string, updater: (annotation: Annotation) => Annotation) => {
     setAnnotations((current) =>
@@ -192,8 +243,7 @@ function Preview() {
       return;
     }
 
-    setColor(annotation.color);
-    setStrokeWidth(annotation.strokeWidth);
+    setState({ color: annotation.color, strokeWidth: annotation.strokeWidth });
   };
 
   const handlePreviewWheel = (event: React.WheelEvent<HTMLElement>) => {
@@ -217,10 +267,10 @@ function Preview() {
     let previousZoom = zoom;
     let nextZoom = zoom;
 
-    setZoom((current) => {
-      previousZoom = current;
-      nextZoom = clampZoom(current * Math.exp(-event.deltaY * 0.005));
-      return nextZoom;
+    setState((current) => {
+      previousZoom = current.zoom;
+      nextZoom = clampZoom(current.zoom * Math.exp(-event.deltaY * 0.005));
+      return { zoom: nextZoom };
     });
 
     window.requestAnimationFrame(() => {
@@ -258,339 +308,40 @@ function Preview() {
     <main className="preview-window">
       {capture ? (
         <>
-          <header className="annotation-toolbar">
-            <div className="tool-list" role="toolbar" aria-label="Annotation tools">
-              {(['arrow', 'rectangle', 'text', 'pixelate', 'pen'] as const).map((nextTool) => (
-                <button
-                  type="button"
-                  className={tool === nextTool ? 'icon-button active' : 'icon-button'}
-                  key={nextTool}
-                  onClick={() => setTool(nextTool)}
-                  title={toolTooltip(nextTool)}
-                  aria-label={toolTooltip(nextTool)}
-                >
-                  <ToolIcon tool={nextTool} />
-                </button>
-              ))}
-            </div>
+          <PreviewToolbar
+            tool={tool}
+            color={color}
+            strokeWidth={strokeWidth}
+            selectedId={selectedId}
+            zoom={zoom}
+            setState={setState}
+            updateAnnotation={updateAnnotation}
+          />
 
-            <div className="toolbar-divider" />
+          <PreviewCanvas
+            imagePanelRef={imagePanelRef}
+            canvasRef={canvasRef}
+            textInputRef={textInputRef}
+            interactionRef={interactionRef}
+            annotations={annotations}
+            selectedId={selectedId}
+            textEditor={textEditor}
+            tool={tool}
+            color={color}
+            strokeWidth={strokeWidth}
+            handlePreviewWheel={handlePreviewWheel}
+            selectAnnotation={selectAnnotation}
+            setAnnotations={setAnnotations}
+            setSelectedId={setSelectedId}
+            setState={setState}
+          />
 
-            <fieldset className="color-list" aria-label="Annotation color">
-              {colors.map((nextColor) => (
-                <button
-                  type="button"
-                  className={color === nextColor ? 'active swatch' : 'swatch'}
-                  key={nextColor}
-                  style={{ background: nextColor }}
-                  onClick={() => {
-                    setColor(nextColor);
-                    if (selectedId) {
-                      updateAnnotation(selectedId, (annotation) => ({ ...annotation, color: nextColor }));
-                    }
-                  }}
-                  title={`Use ${nextColor}`}
-                  aria-label={`Use ${nextColor}`}
-                />
-              ))}
-            </fieldset>
-
-            <label className="stroke-control" title="Change stroke width">
-              <span>Stroke</span>
-              <input
-                type="range"
-                min="2"
-                max="24"
-                value={strokeWidth}
-                onChange={(event) => {
-                  const nextStrokeWidth = Number(event.currentTarget.value);
-                  setStrokeWidth(nextStrokeWidth);
-                  if (selectedId) {
-                    updateAnnotation(selectedId, (annotation) => ({
-                      ...annotation,
-                      strokeWidth: nextStrokeWidth,
-                      ...(annotation.tool === 'text'
-                        ? { fontSize: Math.max(18, nextStrokeWidth * 5) }
-                        : null),
-                    }));
-                  }
-                }}
-              />
-            </label>
-
-            <div className="zoom-control" aria-label="Preview zoom controls">
-              <button
-                type="button"
-                onClick={() => setZoom((current) => clampZoom(current - zoomStep))}
-                disabled={zoom <= minZoom}
-                title="Zoom out"
-                aria-label="Zoom out"
-              >
-                −
-              </button>
-              <span>{Math.round(zoom * 100)}%</span>
-              <button
-                type="button"
-                onClick={() => setZoom((current) => clampZoom(current + zoomStep))}
-                disabled={zoom >= maxZoom}
-                title="Zoom in"
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-              <button
-                type="button"
-                onClick={() => setZoom(1)}
-                disabled={zoom === 1}
-                title="Reset zoom"
-              >
-                Reset
-              </button>
-            </div>
-          </header>
-
-          <section className="image-panel" ref={imagePanelRef} onWheel={handlePreviewWheel}>
-            <div className="canvas-wrap">
-              <canvas
-                ref={canvasRef}
-                onDoubleClick={() => {
-                  const selected = annotations.find((annotation) => annotation.id === selectedId);
-                  const canvas = canvasRef.current;
-
-                  if (!selected || selected.tool !== 'text' || !canvas) {
-                    return;
-                  }
-
-                  const scale = canvas.clientWidth / canvas.width;
-                  setTextEditor({
-                    id: selected.id,
-                    imagePoint: selected.point,
-                    displayPoint: toDisplayPoint(selected.point, scale),
-                    value: selected.text,
-                  });
-                }}
-                onPointerDown={(event) => {
-                  const canvas = canvasRef.current;
-                  const context = canvas?.getContext('2d');
-
-                  if (!canvas || !context) {
-                    return;
-                  }
-
-                  const point = eventPoint(event, canvas);
-                  const scale = canvas.clientWidth / canvas.width;
-                  const imagePoint = toImagePoint(point, scale);
-                  const handleHit = selectedId
-                    ? hitTestHandle(context, annotations, selectedId, imagePoint, scale)
-                    : null;
-
-                  if (handleHit) {
-                    const selected = annotations.find((annotation) => annotation.id === selectedId) as Annotation;
-
-                    event.preventDefault();
-                    interactionRef.current =
-                      handleHit === 'rotate'
-                        ? {
-                            kind: 'rotate',
-                            id: selectedId as string,
-                            original: cloneAnnotation(selected),
-                          }
-                        : {
-                            kind: 'resize',
-                            id: selectedId as string,
-                            handle: handleHit,
-                            startPoint: imagePoint,
-                            original: cloneAnnotation(selected),
-                          };
-                    canvas.setPointerCapture(event.pointerId);
-                    return;
-                  }
-
-                  const hit = hitTestAnnotation(context, annotations, imagePoint, scale);
-
-                  if (hit) {
-                    event.preventDefault();
-                    selectAnnotation(hit);
-                    interactionRef.current = {
-                      kind: 'move',
-                      id: hit.id,
-                      startPoint: imagePoint,
-                      original: cloneAnnotation(hit),
-                    };
-                    canvas.setPointerCapture(event.pointerId);
-                    return;
-                  }
-
-                  selectAnnotation(null);
-
-                  if (tool === 'text') {
-                    event.preventDefault();
-                    setTextEditor({
-                      id: null,
-                      imagePoint,
-                      displayPoint: point,
-                      value: 'Text',
-                    });
-                    return;
-                  }
-
-                  const annotation = createAnnotation(tool, imagePoint, color, strokeWidth);
-                  interactionRef.current = { kind: 'draw', annotation };
-                  setDraftAnnotation(annotation);
-                  canvas.setPointerCapture(event.pointerId);
-                }}
-                onPointerMove={(event) => {
-                  const interaction = interactionRef.current;
-
-                  if (!interaction) {
-                    return;
-                  }
-
-                  const canvas = canvasRef.current;
-
-                  if (!canvas) {
-                    return;
-                  }
-
-                  const point = eventPoint(event, canvas);
-                  const scale = canvas.clientWidth / canvas.width;
-                  const imagePoint = toImagePoint(point, scale);
-
-                  if (interaction.kind === 'draw') {
-                    const nextAnnotation = updateDraftAnnotation(interaction.annotation, imagePoint);
-                    interactionRef.current = { kind: 'draw', annotation: nextAnnotation };
-                    setDraftAnnotation(nextAnnotation);
-                    return;
-                  }
-
-                  if (interaction.kind === 'move') {
-                    const delta = {
-                      x: imagePoint.x - interaction.startPoint.x,
-                      y: imagePoint.y - interaction.startPoint.y,
-                    };
-                    setAnnotations((current) =>
-                      current.map((annotation) =>
-                        annotation.id === interaction.id
-                          ? moveAnnotation(interaction.original, delta)
-                          : annotation,
-                      ),
-                    );
-                    return;
-                  }
-
-                  if (interaction.kind === 'resize') {
-                    setAnnotations((current) =>
-                      current.map((annotation) =>
-                        annotation.id === interaction.id
-                          ? resizeAnnotation(interaction.original, interaction.handle, imagePoint)
-                          : annotation,
-                      ),
-                    );
-                    return;
-                  }
-
-                  setAnnotations((current) =>
-                    current.map((annotation) =>
-                      annotation.id === interaction.id
-                        ? rotateAnnotation(interaction.original, imagePoint)
-                        : annotation,
-                    ),
-                  );
-                }}
-                onPointerUp={(event) => {
-                  const interaction = interactionRef.current;
-                  const canvas = canvasRef.current;
-
-                  if (canvas?.hasPointerCapture(event.pointerId)) {
-                    canvas.releasePointerCapture(event.pointerId);
-                  }
-
-                  if (interaction?.kind === 'draw') {
-                    const annotation = interaction.annotation;
-                    if (isMeaningfulAnnotation(annotation)) {
-                      setAnnotations((current) => [...current, annotation]);
-                      selectAnnotation(annotation);
-                    }
-                    setDraftAnnotation(null);
-                  }
-
-                  interactionRef.current = null;
-                }}
-              />
-              {textEditor ? (
-                <input
-                  ref={textInputRef}
-                  className="inline-text-editor"
-                  type="text"
-                  value={textEditor.value}
-                  style={{ left: textEditor.displayPoint.x, top: textEditor.displayPoint.y }}
-                  placeholder="Type text"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onChange={(event) => {
-                    setTextEditor({ ...textEditor, value: event.currentTarget.value });
-                  }}
-                  onBlur={() => {
-                    commitText(textEditor, color, strokeWidth, setAnnotations, setSelectedId);
-                    setTextEditor(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      commitText(textEditor, color, strokeWidth, setAnnotations, setSelectedId);
-                      setTextEditor(null);
-                    }
-
-                    if (event.key === 'Escape') {
-                      setTextEditor(null);
-                    }
-                  }}
-                />
-              ) : null}
-            </div>
-          </section>
-
-          <footer className="toolbar">
-            <div>
-              <strong>
-                {capture.width} × {capture.height}
-              </strong>
-              {status ? <span>{status}</span> : null}
-            </div>
-            <div className="actions">
-              <button
-                type="button"
-                onClick={() => {
-                  const payload = exportPayload();
-                  if (payload) {
-                    void window.snappd
-                      .copyAnnotatedCapture(payload)
-                      .then(() => setStatus('Copied'));
-                  }
-                }}
-              >
-                Copy
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const payload = exportPayload();
-                  if (payload) {
-                    void window.snappd.saveAnnotatedCapture(payload).then((response) => {
-                      setStatus(
-                        response.status === 'saved'
-                          ? `Saved to ${response.filePath}`
-                          : response.message,
-                      );
-                    });
-                  }
-                }}
-              >
-                Save
-              </button>
-              <button type="button" onClick={() => void window.snappd.closePreview()}>
-                Discard
-              </button>
-            </div>
-          </footer>
+          <PreviewFooter
+            capture={capture}
+            status={status}
+            exportPayload={exportPayload}
+            setState={setState}
+          />
         </>
       ) : (
         <p className="empty-state">No capture available.</p>
@@ -599,12 +350,424 @@ function Preview() {
   );
 }
 
+function PreviewCanvas({
+  imagePanelRef,
+  canvasRef,
+  textInputRef,
+  interactionRef,
+  annotations,
+  selectedId,
+  textEditor,
+  tool,
+  color,
+  strokeWidth,
+  handlePreviewWheel,
+  selectAnnotation,
+  setAnnotations,
+  setSelectedId,
+  setState,
+}: {
+  imagePanelRef: React.RefObject<HTMLElement | null>;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  textInputRef: React.RefObject<HTMLInputElement | null>;
+  interactionRef: React.RefObject<Interaction | null>;
+  annotations: Annotation[];
+  selectedId: string | null;
+  textEditor: TextEditor | null;
+  tool: AnnotationTool;
+  color: string;
+  strokeWidth: number;
+  handlePreviewWheel: (event: React.WheelEvent<HTMLElement>) => void;
+  selectAnnotation: (annotation: Annotation | null) => void;
+  setAnnotations: (updater: (current: Annotation[]) => Annotation[]) => void;
+  setSelectedId: (selectedId: string | null) => void;
+  setState: React.Dispatch<PreviewAction>;
+}) {
+  return (
+    <section className="image-panel" ref={imagePanelRef} onWheel={handlePreviewWheel}>
+      <div className="canvas-wrap">
+        <canvas
+          ref={canvasRef}
+          onDoubleClick={() => {
+            const selected = annotations.find((annotation) => annotation.id === selectedId);
+            const canvas = canvasRef.current;
+
+            if (selected?.tool !== 'text' || !canvas) {
+              return;
+            }
+
+            const scale = canvas.clientWidth / canvas.width;
+            setState({
+              textEditor: {
+                id: selected.id,
+                imagePoint: selected.point,
+                displayPoint: toDisplayPoint(selected.point, scale),
+                value: selected.text,
+              },
+            });
+          }}
+          onPointerDown={(event) => {
+            const canvas = canvasRef.current;
+            const context = canvas?.getContext('2d');
+
+            if (!canvas || !context) {
+              return;
+            }
+
+            const point = eventPoint(event, canvas);
+            const scale = canvas.clientWidth / canvas.width;
+            const imagePoint = toImagePoint(point, scale);
+            const handleHit = selectedId
+              ? hitTestHandle(context, annotations, selectedId, imagePoint, scale)
+              : null;
+
+            if (handleHit) {
+              const selected = annotations.find(
+                (annotation) => annotation.id === selectedId,
+              ) as Annotation;
+
+              event.preventDefault();
+              interactionRef.current =
+                handleHit === 'rotate'
+                  ? {
+                      kind: 'rotate',
+                      id: selectedId as string,
+                      original: cloneAnnotation(selected),
+                    }
+                  : {
+                      kind: 'resize',
+                      id: selectedId as string,
+                      handle: handleHit,
+                      startPoint: imagePoint,
+                      original: cloneAnnotation(selected),
+                    };
+              canvas.setPointerCapture(event.pointerId);
+              return;
+            }
+
+            const hit = hitTestAnnotation(context, annotations, imagePoint, scale);
+
+            if (hit) {
+              event.preventDefault();
+              selectAnnotation(hit);
+              interactionRef.current = {
+                kind: 'move',
+                id: hit.id,
+                startPoint: imagePoint,
+                original: cloneAnnotation(hit),
+              };
+              canvas.setPointerCapture(event.pointerId);
+              return;
+            }
+
+            selectAnnotation(null);
+
+            if (tool === 'text') {
+              event.preventDefault();
+              setState({
+                textEditor: {
+                  id: null,
+                  imagePoint,
+                  displayPoint: point,
+                  value: 'Text',
+                },
+              });
+              return;
+            }
+
+            const annotation = createAnnotation(tool, imagePoint, color, strokeWidth);
+            interactionRef.current = { kind: 'draw', annotation };
+            setState({ draftAnnotation: annotation });
+            canvas.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const interaction = interactionRef.current;
+
+            if (!interaction) {
+              return;
+            }
+
+            const canvas = canvasRef.current;
+
+            if (!canvas) {
+              return;
+            }
+
+            const point = eventPoint(event, canvas);
+            const scale = canvas.clientWidth / canvas.width;
+            const imagePoint = toImagePoint(point, scale);
+
+            if (interaction.kind === 'draw') {
+              const nextAnnotation = updateDraftAnnotation(interaction.annotation, imagePoint);
+              interactionRef.current = { kind: 'draw', annotation: nextAnnotation };
+              setState({ draftAnnotation: nextAnnotation });
+              return;
+            }
+
+            if (interaction.kind === 'move') {
+              const delta = {
+                x: imagePoint.x - interaction.startPoint.x,
+                y: imagePoint.y - interaction.startPoint.y,
+              };
+              setAnnotations((current) =>
+                current.map((annotation) =>
+                  annotation.id === interaction.id
+                    ? moveAnnotation(interaction.original, delta)
+                    : annotation,
+                ),
+              );
+              return;
+            }
+
+            if (interaction.kind === 'resize') {
+              setAnnotations((current) =>
+                current.map((annotation) =>
+                  annotation.id === interaction.id
+                    ? resizeAnnotation(interaction.original, interaction.handle, imagePoint)
+                    : annotation,
+                ),
+              );
+              return;
+            }
+
+            setAnnotations((current) =>
+              current.map((annotation) =>
+                annotation.id === interaction.id
+                  ? rotateAnnotation(interaction.original, imagePoint)
+                  : annotation,
+              ),
+            );
+          }}
+          onPointerUp={(event) => {
+            const interaction = interactionRef.current;
+            const canvas = canvasRef.current;
+
+            if (canvas?.hasPointerCapture(event.pointerId)) {
+              canvas.releasePointerCapture(event.pointerId);
+            }
+
+            if (interaction?.kind === 'draw') {
+              const annotation = interaction.annotation;
+              if (isMeaningfulAnnotation(annotation)) {
+                setAnnotations((current) => [...current, annotation]);
+                selectAnnotation(annotation);
+              }
+              setState({ draftAnnotation: null });
+            }
+
+            interactionRef.current = null;
+          }}
+        />
+        {textEditor ? (
+          <input
+            ref={textInputRef}
+            className="inline-text-editor"
+            type="text"
+            value={textEditor.value}
+            style={{ left: textEditor.displayPoint.x, top: textEditor.displayPoint.y }}
+            placeholder="Type text"
+            aria-label="Annotation text"
+            onPointerDown={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              setState({ textEditor: { ...textEditor, value: event.currentTarget.value } });
+            }}
+            onBlur={() => {
+              commitText(textEditor, color, strokeWidth, setAnnotations, setSelectedId);
+              setState({ textEditor: null });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                commitText(textEditor, color, strokeWidth, setAnnotations, setSelectedId);
+                setState({ textEditor: null });
+              }
+
+              if (event.key === 'Escape') {
+                setState({ textEditor: null });
+              }
+            }}
+          />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function PreviewToolbar({
+  tool,
+  color,
+  strokeWidth,
+  selectedId,
+  zoom,
+  setState,
+  updateAnnotation,
+}: {
+  tool: AnnotationTool;
+  color: string;
+  strokeWidth: number;
+  selectedId: string | null;
+  zoom: number;
+  setState: React.Dispatch<PreviewAction>;
+  updateAnnotation: (id: string, updater: (annotation: Annotation) => Annotation) => void;
+}) {
+  return (
+    <header className="annotation-toolbar">
+      <div className="tool-list" role="toolbar" aria-label="Annotation tools">
+        {(['arrow', 'rectangle', 'text', 'pixelate', 'pen'] as const).map((nextTool) => (
+          <button
+            type="button"
+            className={tool === nextTool ? 'icon-button active' : 'icon-button'}
+            key={nextTool}
+            onClick={() => setState({ tool: nextTool })}
+            title={toolTooltip(nextTool)}
+            aria-label={toolTooltip(nextTool)}
+          >
+            <ToolIcon tool={nextTool} />
+          </button>
+        ))}
+      </div>
+
+      <div className="toolbar-divider" />
+
+      <fieldset className="color-list" aria-label="Annotation color">
+        {colors.map((nextColor) => (
+          <button
+            type="button"
+            className={color === nextColor ? 'active swatch' : 'swatch'}
+            key={nextColor}
+            style={{ background: nextColor }}
+            onClick={() => {
+              setState({ color: nextColor });
+              if (selectedId) {
+                updateAnnotation(selectedId, (annotation) => ({ ...annotation, color: nextColor }));
+              }
+            }}
+            title={`Use ${nextColor}`}
+            aria-label={`Use ${nextColor}`}
+          />
+        ))}
+      </fieldset>
+
+      <label className="stroke-control" title="Change stroke width">
+        <span>Stroke</span>
+        <input
+          type="range"
+          min="2"
+          max="24"
+          value={strokeWidth}
+          onChange={(event) => {
+            const nextStrokeWidth = Number(event.currentTarget.value);
+            setState({ strokeWidth: nextStrokeWidth });
+            if (selectedId) {
+              updateAnnotation(selectedId, (annotation) => ({
+                ...annotation,
+                strokeWidth: nextStrokeWidth,
+                ...(annotation.tool === 'text'
+                  ? { fontSize: Math.max(18, nextStrokeWidth * 5) }
+                  : null),
+              }));
+            }
+          }}
+        />
+      </label>
+
+      <fieldset className="zoom-control" aria-label="Preview zoom controls">
+        <button
+          type="button"
+          onClick={() => setState((current) => ({ zoom: clampZoom(current.zoom - zoomStep) }))}
+          disabled={zoom <= minZoom}
+          title="Zoom out"
+          aria-label="Zoom out"
+        >
+          −
+        </button>
+        <span>{Math.round(zoom * 100)}%</span>
+        <button
+          type="button"
+          onClick={() => setState((current) => ({ zoom: clampZoom(current.zoom + zoomStep) }))}
+          disabled={zoom >= maxZoom}
+          title="Zoom in"
+          aria-label="Zoom in"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => setState({ zoom: 1 })}
+          disabled={zoom === 1}
+          title="Reset zoom"
+        >
+          Reset
+        </button>
+      </fieldset>
+    </header>
+  );
+}
+
+function PreviewFooter({
+  capture,
+  status,
+  exportPayload,
+  setState,
+}: {
+  capture: CaptureResult;
+  status: string;
+  exportPayload: () => { dataUrl: string; width: number; height: number } | null;
+  setState: React.Dispatch<PreviewAction>;
+}) {
+  return (
+    <footer className="toolbar">
+      <div>
+        <strong>
+          {capture.width} × {capture.height}
+        </strong>
+        {status ? <span>{status}</span> : null}
+      </div>
+      <div className="actions">
+        <button
+          type="button"
+          onClick={() => {
+            const payload = exportPayload();
+            if (payload) {
+              void window.snappd
+                .copyAnnotatedCapture(payload)
+                .then(() => setState({ status: 'Copied' }));
+            }
+          }}
+        >
+          Copy
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const payload = exportPayload();
+            if (payload) {
+              void window.snappd.saveAnnotatedCapture(payload).then((response) => {
+                setState({
+                  status:
+                    response.status === 'saved'
+                      ? `Saved to ${response.filePath}`
+                      : response.message,
+                });
+              });
+            }
+          }}
+        >
+          Save
+        </button>
+        <button type="button" onClick={() => void window.snappd.closePreview()}>
+          Discard
+        </button>
+      </div>
+    </footer>
+  );
+}
+
 function commitText(
   editor: { id: string | null; imagePoint: Point; value: string },
   color: string,
   strokeWidth: number,
-  setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>,
-  setSelectedId: React.Dispatch<React.SetStateAction<string | null>>,
+  setAnnotations: (updater: (current: Annotation[]) => Annotation[]) => void,
+  setSelectedId: (selectedId: string | null) => void,
 ): void {
   const text = editor.value.trim();
 
@@ -763,7 +926,14 @@ function drawAnnotation(context: CanvasRenderingContext2D, annotation: Annotatio
     return;
   }
 
-  drawShape(context, annotation.tool, annotation.start, annotation.end, annotation.color, annotation.strokeWidth);
+  drawShape(
+    context,
+    annotation.tool,
+    annotation.start,
+    annotation.end,
+    annotation.color,
+    annotation.strokeWidth,
+  );
   context.restore();
 }
 
@@ -997,9 +1167,10 @@ function hitTestHandle(
   }
 
   for (const handle of selectionHandles(selected, context)) {
-    const tolerance = handle.handle === 'rotate'
-      ? Math.max(rotateHandleSize / scale / 2, 10)
-      : Math.max(handleSize / scale, 6);
+    const tolerance =
+      handle.handle === 'rotate'
+        ? Math.max(rotateHandleSize / scale / 2, 10)
+        : Math.max(handleSize / scale, 6);
 
     if (distance(point, handle.point) <= tolerance) {
       return handle.handle;
@@ -1020,10 +1191,17 @@ function hitTestAnnotation(
   for (let annotationIndex = annotations.length - 1; annotationIndex >= 0; annotationIndex -= 1) {
     const annotation = annotations[annotationIndex];
 
-    const localPoint = rotatePoint(point, annotationCenter(annotation, context), -annotation.rotation);
+    const localPoint = rotatePoint(
+      point,
+      annotationCenter(annotation, context),
+      -annotation.rotation,
+    );
 
     if (annotation.tool === 'arrow') {
-      if (distanceToSegment(localPoint, annotation.start, annotation.end) <= tolerance + annotation.strokeWidth / 2) {
+      if (
+        distanceToSegment(localPoint, annotation.start, annotation.end) <=
+        tolerance + annotation.strokeWidth / 2
+      ) {
         return annotation;
       }
       continue;
@@ -1072,7 +1250,12 @@ function annotationBox(annotation: Annotation, context: CanvasRenderingContext2D
 
   const x = Math.min(annotation.start.x, annotation.end.x);
   const y = Math.min(annotation.start.y, annotation.end.y);
-  return new DOMRect(x, y, Math.abs(annotation.end.x - annotation.start.x), Math.abs(annotation.end.y - annotation.start.y));
+  return new DOMRect(
+    x,
+    y,
+    Math.abs(annotation.end.x - annotation.start.x),
+    Math.abs(annotation.end.y - annotation.start.y),
+  );
 }
 
 function annotationCenter(annotation: Annotation, context: CanvasRenderingContext2D | null): Point {
@@ -1164,7 +1347,12 @@ function resizeBox(box: DOMRect, handle: BoxHandle, point: Point): DOMRect {
   const x = Math.min(opposite.x, point.x);
   const y = Math.min(opposite.y, point.y);
 
-  return new DOMRect(x, y, Math.max(1, Math.abs(point.x - opposite.x)), Math.max(1, Math.abs(point.y - opposite.y)));
+  return new DOMRect(
+    x,
+    y,
+    Math.max(1, Math.abs(point.x - opposite.x)),
+    Math.max(1, Math.abs(point.y - opposite.y)),
+  );
 }
 
 function scalePoints(points: Point[], from: DOMRect, to: DOMRect): Point[] {
@@ -1253,7 +1441,7 @@ function toolTooltip(tool: AnnotationTool): string {
   return labels[tool];
 }
 
-function ToolIcon({ tool }: { tool: AnnotationTool }) {
+export function ToolIcon({ tool }: { tool: AnnotationTool }) {
   if (tool === 'arrow') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
